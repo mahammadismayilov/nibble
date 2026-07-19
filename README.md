@@ -43,13 +43,6 @@ Then open **http://localhost:8080** in Chrome or Edge.
 3. Click **Connect** in Nibble
 4. Pick **Wireless-Receiver / config** (not mouse/keyboard)
 
-### First connection
-
-1. Close any OEM mouse software (AJAZZ, etc.)
-2. Plug in your wireless receiver
-3. Click **Connect** in Nibble
-4. Pick **Wireless-Receiver / config** (not mouse/keyboard)
-
 ## Supported devices
 
 Primarily AJ179 / AJ179P (PAW3395) and related 248A/249A receivers.
@@ -60,7 +53,7 @@ WebHID requires a secure context (HTTPS or localhost). You can't just open `inde
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+GPL-3.0 — see [LICENSE](./LICENSE).
 
 ---
 
