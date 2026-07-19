@@ -1,18 +1,15 @@
 # Nibble
 
-Browser-based WebHID mouse configurator for PAW3395-class wireless mice.
+<p>
+  <a href="https://nibble.qafqazsiradaglari.xyz"><strong>Website</strong></a> ·
+  <a href="https://github.com/mahammadismayilov/nibble/releases"><strong>Download</strong></a> ·
+  <a href="https://nibble.qafqazsiradaglari.xyz/#pricing"><strong>Support</strong></a>
+</p>
 
+Browser-based WebHID mouse configurator for PAW3395-class wireless mice.  
 Configure DPI, polling rate, lighting, keys, and power — no Windows installer, no OEM bloat.
 
-## Download
-
-[Download the latest release](https://github.com/mahammadismayilov/nibble/releases) — extract anywhere, no install.
-
-Or clone the repo:
-
-```bash
-git clone https://github.com/mahammadismayilov/nibble.git
-```
+---
 
 ## Quick start
 
@@ -42,6 +39,16 @@ Then open **http://localhost:8080** in Chrome or Edge.
 2. Plug in your wireless receiver
 3. Click **Connect** in Nibble
 4. Pick **Wireless-Receiver / config** (not mouse/keyboard)
+
+## Download
+
+[Download the latest release](https://github.com/mahammadismayilov/nibble/releases) — extract anywhere, no install.
+
+Or clone:
+
+```bash
+git clone https://github.com/mahammadismayilov/nibble.git
+```
 
 ## Supported devices
 
