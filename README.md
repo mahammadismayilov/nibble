@@ -4,22 +4,42 @@ Browser-based WebHID mouse configurator for PAW3395-class wireless mice.
 
 Configure DPI, polling rate, lighting, keys, and power — no Windows installer, no OEM bloat.
 
-## Usage
+## Quick start
 
-Open **`index.html`** in **Chrome or Edge** (WebHID required).  
-Close other mouse drivers first. Connect your receiver and pick **Wireless-Receiver / config** (not mouse/keyboard).
+**You need Chrome or Edge** — WebHID doesn't work in Firefox or Safari.
 
-### Run locally
+### Windows
+
+Double-click `start.bat` or run:
 
 ```bash
 python -m http.server 8080
 ```
 
-Open http://localhost:8080.
+### macOS / Linux
+
+```bash
+chmod +x start.sh
+./start.sh
+# or: python3 -m http.server 8080
+```
+
+Then open **http://localhost:8080** in Chrome or Edge.
+
+### First connection
+
+1. Close any OEM mouse software (AJAZZ, etc.)
+2. Plug in your wireless receiver
+3. Click **Connect** in Nibble
+4. Pick **Wireless-Receiver / config** (not mouse/keyboard)
 
 ## Supported devices
 
 Primarily AJ179 / AJ179P (PAW3395) and related 248A/249A receivers.
+
+## Why a local server?
+
+WebHID requires a secure context (HTTPS or localhost). You can't just open `index.html` from the file system — you need a local HTTP server. The scripts above handle that.
 
 ## License
 
