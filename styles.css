@@ -1018,6 +1018,14 @@ code {
   flex-direction: row-reverse;
 }
 
+.hotspot.top {
+  flex-direction: column;
+}
+
+.hotspot.bottom {
+  flex-direction: column-reverse;
+}
+
 .hotspot .pin {
   width: 16px;
   height: 16px;
@@ -1913,6 +1921,11 @@ input[type="color"]:hover {
   pointer-events: none;
   font-weight: 500;
   font-size: var(--text-sm);
+}
+
+.hotspot:hover {
+  opacity: 1;
+  z-index: 10;
 }
 
 .toast.show {

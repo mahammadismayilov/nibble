@@ -33,7 +33,7 @@ import {
 import { NibbleHid, webHidSupported } from "./hid.js";
 
 const APP_NAME = "Nibble";
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "1.0.0";
 const STORAGE_KEY = "nibble-web-v1";
 const THEME_KEY = "nibble-theme";
 const LEGACY_STORAGE_KEY = "ajazz-driver-web-v1";
@@ -124,12 +124,12 @@ const DEVICES = [
       { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M179" },
     ],
     keys: [
-      { id: 201, keyValue: 0, direction: "left", x: 28, y: 28, defaultFunc: "left", lockedDefault: true },
-      { id: 202, keyValue: 1, direction: "right", x: 72, y: 28, defaultFunc: "right" },
-      { id: 203, keyValue: 2, direction: "right", x: 62, y: 38, defaultFunc: "middle" },
-      { id: 204, keyValue: 4, direction: "left", x: 22, y: 42, defaultFunc: "forward" },
-      { id: 205, keyValue: 3, direction: "left", x: 22, y: 52, defaultFunc: "backward" },
-      { id: 206, keyValue: 5, direction: "right", x: 72, y: 52, defaultFunc: "dpi_loop" },
+      { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },
+      { id: 202, keyValue: 1, direction: "left", x: 70.4, y: 29.5, defaultFunc: "right" },
+      { id: 203, keyValue: 2, direction: "bottom", x: 50.2, y: 16.5, defaultFunc: "middle" },
+      { id: 204, keyValue: 4, direction: "right", x: 22.3, y: 40.9, defaultFunc: "forward" },
+      { id: 205, keyValue: 3, direction: "right", x: 22, y: 52.6, defaultFunc: "backward" },
+      { id: 206, keyValue: 5, direction: "left", x: 61.2, y: 54, defaultFunc: "dpi_loop" },
     ],
     dpiDefaults: [
       { value: 400, color: "#FF0000" },
@@ -163,12 +163,12 @@ const DEVICES = [
       { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M129" },
     ],
     keys: [
-      { id: 201, keyValue: 0, direction: "left", x: 28, y: 28, defaultFunc: "left", lockedDefault: true },
-      { id: 202, keyValue: 1, direction: "right", x: 72, y: 28, defaultFunc: "right" },
-      { id: 203, keyValue: 2, direction: "right", x: 62, y: 38, defaultFunc: "middle" },
-      { id: 204, keyValue: 4, direction: "left", x: 22, y: 42, defaultFunc: "forward" },
-      { id: 205, keyValue: 3, direction: "left", x: 22, y: 52, defaultFunc: "backward" },
-      { id: 206, keyValue: 5, direction: "right", x: 72, y: 52, defaultFunc: "dpi_loop" },
+      { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },
+      { id: 202, keyValue: 1, direction: "left", x: 70.4, y: 29.5, defaultFunc: "right" },
+      { id: 203, keyValue: 2, direction: "bottom", x: 50.2, y: 16.5, defaultFunc: "middle" },
+      { id: 204, keyValue: 4, direction: "right", x: 22.3, y: 40.9, defaultFunc: "forward" },
+      { id: 205, keyValue: 3, direction: "right", x: 22, y: 52.6, defaultFunc: "backward" },
+      { id: 206, keyValue: 5, direction: "left", x: 61.2, y: 54, defaultFunc: "dpi_loop" },
     ],
     dpiDefaults: [
       { value: 400, color: "#FF0000" },
@@ -202,12 +202,12 @@ const DEVICES = [
       { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M620" },
     ],
     keys: [
-      { id: 201, keyValue: 0, direction: "left", x: 28, y: 28, defaultFunc: "left", lockedDefault: true },
-      { id: 202, keyValue: 1, direction: "right", x: 72, y: 28, defaultFunc: "right" },
-      { id: 203, keyValue: 2, direction: "right", x: 62, y: 38, defaultFunc: "middle" },
-      { id: 204, keyValue: 4, direction: "left", x: 22, y: 42, defaultFunc: "forward" },
-      { id: 205, keyValue: 3, direction: "left", x: 22, y: 52, defaultFunc: "backward" },
-      { id: 206, keyValue: 5, direction: "right", x: 72, y: 52, defaultFunc: "dpi_loop" },
+      { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },
+      { id: 202, keyValue: 1, direction: "left", x: 70.4, y: 29.5, defaultFunc: "right" },
+      { id: 203, keyValue: 2, direction: "bottom", x: 50.2, y: 16.5, defaultFunc: "middle" },
+      { id: 204, keyValue: 4, direction: "right", x: 22.3, y: 40.9, defaultFunc: "forward" },
+      { id: 205, keyValue: 3, direction: "right", x: 22, y: 52.6, defaultFunc: "backward" },
+      { id: 206, keyValue: 5, direction: "left", x: 61.2, y: 54, defaultFunc: "dpi_loop" },
     ],
     dpiDefaults: [
       { value: 400, color: "#FF0000" },
@@ -241,12 +241,12 @@ const DEVICES = [
       { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M630" },
     ],
     keys: [
-      { id: 201, keyValue: 0, direction: "left", x: 28, y: 28, defaultFunc: "left", lockedDefault: true },
-      { id: 202, keyValue: 1, direction: "right", x: 72, y: 28, defaultFunc: "right" },
-      { id: 203, keyValue: 2, direction: "right", x: 62, y: 38, defaultFunc: "middle" },
-      { id: 204, keyValue: 4, direction: "left", x: 22, y: 42, defaultFunc: "forward" },
-      { id: 205, keyValue: 3, direction: "left", x: 22, y: 52, defaultFunc: "backward" },
-      { id: 206, keyValue: 5, direction: "right", x: 72, y: 52, defaultFunc: "dpi_loop" },
+      { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },
+      { id: 202, keyValue: 1, direction: "left", x: 70.4, y: 29.5, defaultFunc: "right" },
+      { id: 203, keyValue: 2, direction: "bottom", x: 50.2, y: 16.5, defaultFunc: "middle" },
+      { id: 204, keyValue: 4, direction: "right", x: 22.3, y: 40.9, defaultFunc: "forward" },
+      { id: 205, keyValue: 3, direction: "right", x: 22, y: 52.6, defaultFunc: "backward" },
+      { id: 206, keyValue: 5, direction: "left", x: 61.2, y: 54, defaultFunc: "dpi_loop" },
     ],
     dpiDefaults: [
       { value: 400, color: "#FF0000" },
@@ -716,12 +716,37 @@ async function connectHid() {
     });
 
     try {
-      await readStatusFromDevice();
+      const st = await readStatusFromDevice();
+      
+      // Auto-detect device model based on devId from packet or vid/pid
+      let match = null;
+      if (st && st.devId) {
+        match = DEVICES.find(d => d.modes.some(m => m.devId === st.devId));
+      }
+      if (!match) {
+        const vidHex = info.vendorId.toString(16).toUpperCase().padStart(4, "0");
+        const pidHex = info.productId.toString(16).toUpperCase().padStart(4, "0");
+        match = DEVICES.find(d => d.modes.some(m => m.vid === vidHex && m.pid === pidHex));
+      }
+      
+      if (match && match.id !== state.deviceId) {
+        state.deviceId = match.id;
+        let idx = state.profiles.findIndex((p) => p.deviceId === state.deviceId);
+        if (idx < 0) {
+          const p = defaultProfile(state.deviceId);
+          state.profiles.push(p);
+          idx = state.profiles.length - 1;
+        }
+        state.activeProfileIndex = idx;
+        const sel = document.getElementById("device-select");
+        if (sel) sel.value = state.deviceId;
+        renderAll();
+      }
+
       await sleep(50);
       await syncProfileFromDevice();
       startBatteryPoll();
-      const bat =
-        typeof state.battery === "number" ? ` · ${state.battery}%` : "";
+      const bat = typeof state.battery === "number" ? ` · ${state.battery}%` : "";
       toast(`Connected${bat}`);
       setStatus(`Ready${bat}`);
     } catch (e) {
@@ -857,7 +882,10 @@ function applyBatteryFromStatus(st) {
   }
 
   // While charging, firmware often reports 100% / "full" — keep last real SOC instead.
-  const chargingNow = flagOn || recentDock || state.batteryCharging || !!st.charging;
+  // Some docks send 100% with no charge flag, so catch sudden jumps to 100 as a dock marker.
+  const isSuddenJumpTo100 = pct >= 100 && typeof state.battery === "number" && state.battery < 95;
+  const chargingNow = flagOn || recentDock || state.batteryCharging || !!st.charging || isSuddenJumpTo100;
+  
   if (chargingNow && pct >= 100) {
     state._lastDockFullAt = now;
     state.batteryOnline = true;
@@ -988,8 +1016,8 @@ async function syncProfileFromDevice() {
       p.reportRateIndex = rr.rateIndex;
       log.push(`${d.reportRates[rr.rateIndex]} Hz`);
     }
-  } catch {
-    /* optional */
+  } catch (e) {
+    console.log("Error getting report rate:", e);
   }
   await sleep(40);
 
@@ -1197,7 +1225,7 @@ function renderKeys() {
   d.keys.forEach((k) => {
     const func = p.keys[k.id] || k.defaultFunc;
     const div = document.createElement("div");
-    div.className = `hotspot ${k.direction === "left" ? "left" : "right"}${
+    div.className = `hotspot ${k.direction || "left"}${
       state.selectedKey === k.id ? " active" : ""
     }`;
     div.style.left = `${k.x}%`;

@@ -96,13 +96,25 @@ export function buildStatusQuery() {
 
 /**
  * Report rate — FUN_004338d0
- * rateIndex: 0..3 for 125/250/500/1000 (matches report_max=4 style)
+ * rateIndex: 0..3 for 125/250/500/1000
  */
+export function encodeRateIndex(idx) {
+  // rateIndex: 0=125, 1=250, 2=500, 3=1000
+  // bInterval: 8=125, 4=250, 2=500, 1=1000
+  const map = { 0: 8, 1: 4, 2: 2, 3: 1 };
+  return map[idx] || 1;
+}
+
+export function decodeRateWire(wireValue) {
+  const map = { 8: 0, 4: 1, 2: 2, 1: 3 };
+  return map[wireValue] !== undefined ? map[wireValue] : 3;
+}
+
 export function buildReportRate(rateIndex) {
   const buf = alloc(0x41);
   setHeader(buf, CMD.REPORT_RATE);
   buf[4] = 1;
-  buf[5] = rateIndex & 0xff;
+  buf[5] = encodeRateIndex(rateIndex);
   return finalize(buf);
 }
 
@@ -115,21 +127,14 @@ export function buildReportRateGet() {
 }
 
 /**
- * Parse GET 0x12 response. SET body is [4]=1 [5]=rateIndex;
+ * Parse GET 0x12 response. SET body is [4]=1 [5]=rateIndex+1;
  * after success [1] is often 0 — accept either form.
  */
 export function parseReportRateResponse(buf) {
   if (!buf || buf.length < 6) return null;
-  // Prefer SET-shaped: meta=1, rate at [5]
-  if (buf[4] === 1 && buf[5] <= 3) {
-    return { rateIndex: buf[5], raw: buf };
-  }
-  if (buf[4] <= 3 && (buf[5] === 0 || buf[5] === 1)) {
-    return { rateIndex: buf[4], raw: buf };
-  }
-  // Scan early payload for a lone 0..3
-  for (let i = 4; i < Math.min(buf.length, 10); i++) {
-    if (buf[i] <= 3) return { rateIndex: buf[i], raw: buf };
+  if (buf[4] === 1) {
+    const rateIndex = decodeRateWire(buf[5]);
+    return { rateIndex, raw: buf };
   }
   return null;
 }
@@ -906,6 +911,7 @@ export function parseStatus(buf) {
       chargeFlag: flag,
       battery: pct,
       batteryRaw: level,
+      devId: extra.devId || null,
       confidence: dockMarker
         ? "dock-marker"
         : extra.confidence || (String(source).startsWith("c0") ? "c0" : "get"),
@@ -964,15 +970,24 @@ export function parseStatus(buf) {
     const flagOff = cmdAt + 0x0c;
     const levelOff = cmdAt + 0x0d;
     if (u8.length <= levelOff) return null;
+    
+    let devId = null;
+    if (u8.length >= cmdAt + 8) {
+      const b1 = u8[cmdAt + 4], b2 = u8[cmdAt + 5], b3 = u8[cmdAt + 6], b4 = u8[cmdAt + 7];
+      if (b1 === 0x4d) devId = String.fromCharCode(b1, b2, b3, b4);
+    }
+
     const flag = u8[flagOff];
     const level = u8[levelOff];
     if (level === 0xff) {
       return make(0xff, flag, 1, tag, {
+        devId,
         debug: `${tag} flag@${flagOff}=${flag} level@${levelOff}=ff`,
       });
     }
     if (level > 0 && level <= 100) {
       return make(level, flag, 1, tag, {
+        devId,
         confidence: "get",
         debug: `${tag} flag@${flagOff}=${flag} level@${levelOff}=${level} → ${level}%`,
       });
@@ -980,6 +995,7 @@ export function parseStatus(buf) {
     // 101–254 rare 0–255 scale
     if (level > 100 && level < 255) {
       return make(level, flag, 1, tag, {
+        devId,
         confidence: "get",
         debug: `${tag} flag@${flagOff}=${flag} level@${levelOff}=${level}`,
       });
