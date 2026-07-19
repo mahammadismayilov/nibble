@@ -4,6 +4,16 @@ Browser-based WebHID mouse configurator for PAW3395-class wireless mice.
 
 Configure DPI, polling rate, lighting, keys, and power — no Windows installer, no OEM bloat.
 
+## Download
+
+[Download the latest ZIP](https://github.com/mahammadismayilov/nibble/archive/refs/heads/main.zip) — extract anywhere, no install.
+
+Or clone the repo:
+
+```bash
+git clone https://github.com/mahammadismayilov/nibble.git
+```
+
 ## Quick start
 
 **You need Chrome or Edge** — WebHID doesn't work in Firefox or Safari.
@@ -25,6 +35,13 @@ chmod +x start.sh
 ```
 
 Then open **http://localhost:8080** in Chrome or Edge.
+
+### First connection
+
+1. Close any OEM mouse software (AJAZZ, etc.)
+2. Plug in your wireless receiver
+3. Click **Connect** in Nibble
+4. Pick **Wireless-Receiver / config** (not mouse/keyboard)
 
 ### First connection
 
