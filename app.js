@@ -673,6 +673,8 @@ function renderConnection() {
     if (fw) fw.textContent = info.productName || "HID open";
     const vp = document.getElementById("vidpid");
     if (vp) vp.textContent = `${vid}:${pid}`;
+    const picker = document.querySelector(".device-picker");
+    if (picker) picker.hidden = true;
   } else {
     el.classList.add("offline");
     text.textContent = webHidSupported() ? "Not connected · click Connect" : "WebHID unavailable";
@@ -682,6 +684,8 @@ function renderConnection() {
     if (fw) fw.textContent = "— not connected —";
     const vp = document.getElementById("vidpid");
     if (vp) vp.textContent = "—";
+    const picker = document.querySelector(".device-picker");
+    if (picker) picker.hidden = false;
   }
   const pct = document.getElementById("battery-pct");
   const level = document.getElementById("battery-level");
@@ -749,6 +753,7 @@ async function connectHid() {
       const bat = typeof state.battery === "number" ? ` · ${state.battery}%` : "";
       toast(`Connected${bat}`);
       setStatus(`Ready${bat}`);
+      showTab("home");
     } catch (e) {
       setStatus(`Connected · could not sync settings (${e.message})`);
     }
