@@ -6,7 +6,7 @@ Configure DPI, polling rate, lighting, keys, and power — no Windows installer,
 
 ## Download
 
-[Download the latest ZIP](https://github.com/mahammadismayilov/nibble/archive/refs/heads/main.zip) — extract anywhere, no install.
+[Download the latest release](https://github.com/mahammadismayilov/nibble/releases) — extract anywhere, no install.
 
 Or clone the repo:
 
