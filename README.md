@@ -11,6 +11,8 @@ Configure DPI, polling rate, lighting, keys, and power — no Windows installer,
 
 ---
 
+![Nibble screenshot](assets/screenshot.png)
+
 ## Quick start
 
 **You need Chrome or Edge** — WebHID doesn't work in Firefox or Safari.
