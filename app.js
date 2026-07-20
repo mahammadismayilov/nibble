@@ -29,6 +29,8 @@ import {
   bufToHex,
   uiBrightnessToWire,
   uiSpeedToWire,
+  buildSensorGet,
+  parseSensorResponse,
 } from "./protocol.js";
 import { NibbleHid, webHidSupported } from "./hid.js";
 
@@ -701,10 +703,16 @@ function renderConnection() {
   if (document.getElementById("stat-battery")) renderHome();
 }
 
-async function connectHid() {
+async function connectHid(alreadyOpened = false) {
   try {
-    setStatus("Select your wireless receiver (not the mouse or keyboard entry)…");
-    const info = await hid.requestAndOpen();
+    let info;
+    if (!alreadyOpened) {
+      setStatus("Select your wireless receiver (not the mouse or keyboard entry)…");
+      info = await hid.requestAndOpen();
+    } else {
+      info = hid.info;
+    }
+    
     clearBatteryRuntime();
     renderConnection();
     toast("Connected");
@@ -715,8 +723,38 @@ async function connectHid() {
         .padStart(4, "0")}:${info.productId.toString(16).toUpperCase().padStart(4, "0")})`
     );
     hid.onReport((payload) => {
-      const st = parseStatus(payload);
+      const u8 = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+      const st = parseStatus(u8);
       if (st?.kind === "status") applyBatteryFromStatus(st);
+
+      // The mouse broadcasts a 0xC2 packet when the physical DPI button is pressed!
+      // Format: [0xC2, (activeIndex << 4) | 0x06, wireLo, wireHi, ...]
+      // With Windows prefix: u8[1] === 0xC2, u8[2] === (activeIndex << 4) | 0x06
+      const isC2 = (u8.length >= 4) && (u8[0] === 0xc2 || (u8[0] === 0x00 && u8[1] === 0xc2));
+      
+      if (isC2) {
+        const offset = u8[0] === 0x00 ? 1 : 0;
+        const packed = u8[offset + 1];
+        
+        // We only care about the exact pattern where lower nibble is 6 (which seems to indicate DPI change).
+        // e.g., 6, 22, 38, 54, 70, 86
+        if ((packed & 0x0f) === 0x06) {
+          const activeIndex = (packed >> 4) & 0x0f;
+          const p = profile();
+          
+          if (typeof activeIndex === "number" && activeIndex >= 0 && activeIndex < p.dpiStages.length) {
+            if (p.activeDpi !== activeIndex) {
+              p.activeDpi = activeIndex;
+              if (typeof selectedDpiStage !== "undefined") {
+                selectedDpiStage = activeIndex;
+              }
+              saveState();
+              renderDpi();
+              renderHome(); // Update Home tab as well!
+            }
+          }
+        }
+      }
     });
 
     try {
@@ -1044,6 +1082,23 @@ async function syncProfileFromDevice() {
   }
   await sleep(40);
 
+  // Sensor Settings (LOD, Angle Snap, Ripple)
+  try {
+    const raw = await xferGet(buildSensorGet());
+    const sensor = parseSensorResponse(raw);
+    if (sensor) {
+      // Assuming 1 = 1mm (low), 2 = 2mm (high). If user says it's inverted, we'll see!
+      p.settings.lod = sensor.lod === 2 ? "high" : "low";
+      p.settings.angleSnap = sensor.angleSnap;
+      p.settings.rippleControl = sensor.ripple;
+      p.sensor = sensor;
+      renderSensor();
+    }
+  } catch (e) {
+    /* optional */
+  }
+  await sleep(40);
+
   // Lighting
   try {
     const raw = await xferGet(buildLightGet());
@@ -1074,6 +1129,7 @@ async function syncProfileFromDevice() {
   renderHome();
   renderDpi();
   renderLight();
+  renderSettings();
   renderConnection();
   setStatus(log.length ? `Synced · ${log.join(" · ")}` : "Synced");
   return log;
@@ -1787,14 +1843,93 @@ function init() {
     }
   }
 
-  // Re-open previously permitted device (no chooser) if available
-  hid.tryReopenGranted().then((ok) => {
-    if (ok) {
-      renderConnection();
-      setStatus("Reconnected");
+  // Landing screen logic
+  async function startupCheck() {
+    if (!webHidSupported()) return;
+    try {
+      const devices = await hid.getGrantedConfigDevices();
+      if (devices.length === 1) {
+        try {
+          // Only 1 mouse paired! Connect and skip landing page
+          document.getElementById("main-app").style.display = "";
+          await hid.openDevice(devices[0]);
+          await connectHid(true);
+        } catch(e) {
+          console.error(e);
+          showLandingScreen(devices);
+        }
+      } else if (devices.length > 1) {
+        // Multiple mice paired! Show the landing screen with selector
+        showLandingScreen(devices);
+      } else {
+        // No mice paired! Show the landing screen with just connect button
+        showLandingScreen([]);
+      }
+    } catch (e) {
+      console.error(e);
+      showLandingScreen([]);
     }
-  }).catch(() => {});
+  }
+
+  startupCheck();
 }
+
+function showLandingScreen(devices) {
+  const landing = document.getElementById("landing-screen");
+  const main = document.getElementById("main-app");
+  if (!landing || !main) return;
+  
+  landing.style.display = "flex";
+  main.style.display = "none";
+  
+  const grid = document.getElementById("landing-grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  
+  if (devices.length > 0) {
+    // Show cards for each paired device
+    devices.forEach((dev) => {
+      // We don't have the devId string yet, so we just show generic details based on productName
+      const card = document.createElement("div");
+      card.className = "landing-card";
+      
+      // Default to AJ179 image if we can't tell which one it is
+      let img = "assets/device/mouse_aj179.png";
+      const name = dev.productName || "AJAZZ Mouse";
+      
+      card.innerHTML = `
+        <img src="${img}" alt="${name}" />
+        <h3>${name}</h3>
+      `;
+      card.addEventListener("click", async () => {
+        try {
+          landing.style.display = "none";
+          main.style.display = "";
+          await hid.openDevice(dev);
+          await connectHid(true);
+        } catch (e) {
+          console.error(e);
+        }
+      });
+      grid.appendChild(card);
+    });
+  }
+}
+
+// Attach listener to "Connect new mouse" button on landing screen
+document.getElementById("btn-landing-connect")?.addEventListener("click", async () => {
+  try {
+    const landing = document.getElementById("landing-screen");
+    const main = document.getElementById("main-app");
+    if (landing && main) {
+      landing.style.display = "none";
+      main.style.display = "";
+    }
+    await connectHid(false);
+  } catch (e) {
+    console.error(e);
+  }
+});
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);

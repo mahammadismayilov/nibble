@@ -108,6 +108,27 @@ export class NibbleHid {
     return true;
   }
 
+  async getGrantedConfigDevices() {
+    if (!webHidSupported()) return [];
+    const list = (await navigator.hid.getDevices()).filter(isSupportedVidPid);
+    // Group by some unique identifier to avoid returning multiple interfaces for the same dongle
+    // if pickConfigDevice only picked one, but if they have multiple mice, we want to return
+    // one config interface PER physical device.
+    // For now, let's group by productName + vendorId + productId
+    const groups = new Map();
+    for (const d of list) {
+      const key = `${d.vendorId}-${d.productId}-${d.productName}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(d);
+    }
+    const configs = [];
+    for (const group of groups.values()) {
+      const config = pickConfigDevice(group);
+      if (config && !isForbiddenInterface(config)) configs.push(config);
+    }
+    return configs;
+  }
+
   _handleInput = (ev) => {
     const data = new Uint8Array(ev.data.buffer);
     const payload = normalizeInput(ev.reportId, data);

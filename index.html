@@ -28,7 +28,18 @@
 </head>
 <body>
   <div class="bg-layer"></div>
-  <div class="app">
+  <div class="landing-screen" id="landing-screen">
+    <div class="landing-content">
+      <img src="assets/nibble.svg" alt="Nibble" class="landing-logo" width="64" height="64" />
+      <h1 class="landing-title">Select your mouse</h1>
+      <p class="landing-subtitle">Connect or choose a device to configure</p>
+      <div class="landing-grid" id="landing-grid">
+        <!-- Injected via JS -->
+      </div>
+      <button class="btn primary btn-large" id="btn-landing-connect">Connect new mouse</button>
+    </div>
+  </div>
+  <div class="app" id="main-app" style="display: none;">
     <!-- Top chrome -->
     <div class="top-chrome">
       <header class="titlebar">
@@ -262,15 +273,15 @@
             </div>
             <div class="field">
               <div>
-                <label>Angle Snap</label>
-                <p class="hint">Snap slight angle offset to a straight line</p>
+                <label>Angle Snap <span class="info-icon" data-info="Angle Snapping artificially straightens out your mouse movements. It helps draw perfectly straight horizontal or vertical lines, but is highly discouraged for gaming as it interferes with precise raw aiming tracking.">?</span></label>
+                <p class="hint">Straighten out slight angle offsets</p>
               </div>
               <label class="switch"><input type="checkbox" id="opt-angle-snap" /><span></span></label>
             </div>
             <div class="field">
               <div>
-                <label>Ripple Control</label>
-                <p class="hint">Helps when DPI &gt; 9000</p>
+                <label>Ripple Control <span class="info-icon" data-info="Ripple Control applies a smoothing algorithm to reduce cursor jitter (sensor ripple) at extremely high DPIs. Generally only recommended if you use a DPI above 9000 and notice shaking, otherwise keep it off for lower latency.">?</span></label>
+                <p class="hint">Smooth cursor jitter at high DPIs</p>
               </div>
               <label class="switch"><input type="checkbox" id="opt-ripple" /><span></span></label>
             </div>

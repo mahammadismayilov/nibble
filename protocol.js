@@ -153,11 +153,12 @@ export function buildDpiGet() {
  */
 export function parseDpiResponse(buf, sensorType = 0) {
   if (!buf || buf.length < 30) return null;
+  
+  const cmd = buf[0] === 0x00 ? buf[1] : buf[0];
+  // We don't check cmd strictly because the mouse uses an unknown command byte for spontaneous DPI interrupts.
+  // Instead, we structurally validate the packet below.
+  
   let base = 0;
-  // Windows 00-prefix vs stripped HID
-  if (buf[0] === 0x00 && (buf[1] === 0x13 || buf[1] === 0x00 || buf[1] === 0x03)) {
-    base = 0;
-  }
   // Find meta 0x25
   let metaAt = -1;
   for (let i = 0; i < 8; i++) {
@@ -174,19 +175,38 @@ export function parseDpiResponse(buf, sensorType = 0) {
   if (packed == null) return null;
   const activeIndex = (packed >> 4) & 0x0f;
   const count = packed & 0x0f;
+  
+  // Structural validation: DPI packet must have a sane count and activeIndex!
+  // If count is wildly off, it's a false positive (e.g. from a battery packet containing 0x25).
+  if (count === 0 || count > 8 || activeIndex >= count) {
+    return null;
+  }
+  
   const stages = [];
   let o = metaAt + 2;
+  let validStages = 0;
+  
   for (let i = 0; i < 6; i++) {
     if (o + 3 >= buf.length) break;
     const lo = buf[o];
     const hi = buf[o + 1];
     const wire = lo | (hi << 8);
+    
+    // Check if the wire value is somewhat sane for DPI (e.g., usually between 0 and 15000, and not totally random).
+    // An empty stage might be 0, but if it's random garbage like 65000, reject it.
+    // DPI step is usually 50, so wire is usually > 0 and < 300.
+    // Actually AJ179 PAW3395 raw wire values are max ~520 for 26000 DPI.
+    if (wire > 600) {
+      return null; // Highly unlikely to be a real DPI packet!
+    }
+    
     stages.push({
       wire,
       value: decodeDpi(wire, sensorType),
     });
     o += 4; // lo hi lo hi
   }
+  
   if (!stages.length) return null;
   return {
     activeIndex: Math.min(activeIndex, stages.length - 1),
@@ -772,6 +792,24 @@ export function buildSensor({
   buf[6] = angleSnap ? 1 : 0;
   buf[7] = ripple ? 1 : 0;
   return finalize(buf);
+}
+
+export function buildSensorGet() {
+  const buf = alloc(0x41);
+  setHeader(buf, CMD.SENSOR + 0x10); // 0x16
+  return finalize(buf);
+}
+
+export function parseSensorResponse(buf) {
+  if (!buf || buf.length < 8) return null;
+  // Usually the GET returns the same format as SET body starting at index 5 or so.
+  // We'll inspect buf[5], buf[6], buf[7] assuming it echoes the SET command.
+  return {
+    lod: buf[5],
+    angleSnap: buf[6] === 1,
+    ripple: buf[7] === 1,
+    raw: Array.from(buf.slice(0, 16)),
+  };
 }
 
 /**
