@@ -368,6 +368,9 @@ function defaultProfile(deviceId) {
       moveCloseLight: false,
       mode: "usb",
       lmbLock: true,
+      fineDpi: false,
+      lowBatteryWarn: false,
+      batteryRgbSync: false,
     },
     macros: [],
   };
@@ -401,6 +404,7 @@ const BATTERY_RUNTIME_KEYS = [
   "batteryDebug",
   "_lastDockFullAt",
   "_batterySeenLive",
+  "_lowBatteryWarned",
 ];
 
 function clearBatteryRuntime(target = state) {
@@ -413,6 +417,8 @@ function clearBatteryRuntime(target = state) {
   target.batteryDebug = "";
   target._lastDockFullAt = 0;
   target._batterySeenLive = false;
+  target._lowBatteryWarned = false;
+  target._currentBatteryRgbTier = null;
 }
 
 function loadState() {
@@ -956,6 +962,48 @@ function applyBatteryFromStatus(st) {
   state.batterySource = st.source || "status";
   state.batteryConfidence = st.confidence || "";
   state.batteryDebug = st.debug || "";
+
+  // Experimental feature: Low battery warning
+  const p = profile();
+  if (p?.settings?.lowBatteryWarn && pct <= 15 && !state.batteryCharging && !state._lowBatteryWarned) {
+    state._lowBatteryWarned = true;
+    p.light.mode = "breathe";
+    p.light.color = "#ff0000";
+    saveState();
+    renderLight();
+    queueDeviceWrite("light");
+    showToast("Low battery warning triggered (Blinking Red)", "warn");
+  } else if (state.batteryCharging) {
+    state._lowBatteryWarned = false; // Reset warning when plugged in
+  }
+
+  // Experimental feature: Battery-Sync RGB Mode
+  if (p?.settings?.batteryRgbSync && !state.batteryCharging) {
+    let tier = "green";
+    let hex = "#00ff00";
+    if (pct <= 50 && pct > 25) {
+      tier = "yellow";
+      hex = "#ffff00";
+    } else if (pct <= 25) {
+      tier = "red";
+      hex = "#ff0000";
+    }
+    
+    // Only update flash memory when crossing a threshold tier
+    if (state._currentBatteryRgbTier !== tier) {
+      state._currentBatteryRgbTier = tier;
+      // Do not override user's off/breathe state, just update the color
+      if (p.light.mode !== "off") {
+        p.light.color = hex;
+        saveState();
+        renderLight();
+        queueDeviceWrite("light");
+      }
+    }
+  } else if (state.batteryCharging) {
+    state._currentBatteryRgbTier = null;
+  }
+
   renderConnection();
   return true;
 }
@@ -1386,6 +1434,7 @@ function renderDpi() {
   const slider = document.getElementById("dpi-slider");
   const input = document.getElementById("dpi-input");
   const color = document.getElementById("dpi-color");
+  slider.step = p.settings.fineDpi ? "50" : "100";
   slider.value = stage.value;
   input.value = stage.value;
   color.value = toHex(stage.color);
@@ -1411,7 +1460,8 @@ function renderDpi() {
 function bindDpiEditors() {
   const apply = (val) => {
     const p = profile();
-    const n = Math.min(26000, Math.max(50, Math.round(Number(val) / 50) * 50));
+    const step = p.settings.fineDpi ? 50 : 100;
+    const n = Math.min(26000, Math.max(50, Math.round(Number(val) / step) * step));
     p.dpiStages[selectedDpiStage].value = n;
     document.getElementById("dpi-slider").value = n;
     document.getElementById("dpi-input").value = n;
@@ -1636,6 +1686,9 @@ function renderSettings() {
   setCheck("opt-move-wake", s.moveWake);
   setCheck("opt-move-light", s.moveCloseLight);
   setCheck("opt-lmb-lock", s.lmbLock !== false);
+  setCheck("opt-fine-dpi", s.fineDpi);
+  setCheck("opt-low-battery-warn", s.lowBatteryWarn);
+  setCheck("opt-battery-rgb-sync", s.batteryRgbSync);
 }
 
 function setSegmented(id, value) {
@@ -1681,6 +1734,11 @@ function bindSettings() {
   bindCheck("opt-move-wake", "moveWake", "power");
   bindCheck("opt-move-light", "moveCloseLight", "power");
   bindCheck("opt-lmb-lock", "lmbLock", null); // local only
+  
+  // Experimental
+  bindCheck("opt-fine-dpi", "fineDpi", null);
+  bindCheck("opt-low-battery-warn", "lowBatteryWarn", null);
+  bindCheck("opt-battery-rgb-sync", "batteryRgbSync", "light");
 
   document.getElementById("opt-debounce").addEventListener("change", (e) => {
     profile().settings.debounce = Number(e.target.value) || 0;

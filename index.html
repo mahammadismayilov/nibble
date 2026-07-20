@@ -381,6 +381,32 @@
             <div class="danger-zone">
               <button class="btn danger" id="btn-factory">Restore factory settings</button>
             </div>
+          <div class="card">
+            <h3>Experimental Features</h3>
+            <p class="hint about-copy" style="margin-bottom: 16px;">
+              Software-level unlocks that bypass OEM app limitations.
+            </p>
+            <div class="field">
+              <div>
+                <label>50-Step DPI Granularity</label>
+                <p class="hint">Unlock 50-step increments (default is 100)</p>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-fine-dpi" /><span></span></label>
+            </div>
+            <div class="field">
+              <div>
+                <label>Low Battery Warning</label>
+                <p class="hint">Changes RGB to Breathing Red when battery drops below 15%</p>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-low-battery-warn" /><span></span></label>
+            </div>
+            <div class="field">
+              <div>
+                <label>Battery-Sync RGB Mode</label>
+                <p class="hint">Changes LED color based on battery (Green > 50, Yellow > 25, Red < 25)</p>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-battery-rgb-sync" /><span></span></label>
+            </div>
           </div>
         </div>
       </section>
