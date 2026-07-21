@@ -243,7 +243,6 @@ const DEVICES = [
     modes: [
       { value: 0, desc: "2.4G 8K Dock", vid: "3151", pid: "5007", devId: "M620A" },
       { value: 1, desc: "2.4G 8K Dock (Alt)", vid: "3151", pid: "502D", devId: "M620A" },
-      { value: 2, desc: "Wired / Receiver", vid: "3537", pid: "1093", devId: "M620A" },
     ],
     keys: [
       { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },
