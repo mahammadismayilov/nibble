@@ -35,7 +35,7 @@ import {
 import { NibbleHid, webHidSupported } from "./hid.js";
 
 const APP_NAME = "Nibble";
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.2";
 const STORAGE_KEY = "nibble-web-v1";
 const THEME_KEY = "nibble-theme";
 const LEGACY_STORAGE_KEY = "ajazz-driver-web-v1";
