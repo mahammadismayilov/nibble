@@ -760,6 +760,43 @@ export function buildKeyMap(funcsByKeyValue, opts = {}) {
   return finalize(buf);
 }
 
+export function wireToKeyFunc(b0, b1, b2) {
+  for (const [id, triple] of Object.entries(KEY_FUNC_WIRE)) {
+    if (triple[0] === b0 && triple[1] === b1 && triple[2] === b2) {
+      return id;
+    }
+  }
+  return null;
+}
+
+export function buildKeyMapGet() {
+  const buf = alloc(0x41);
+  setHeader(buf, CMD.KEYMAP + 0x10); // 0x19
+  return finalize(buf);
+}
+
+export function parseKeyMapResponse(buf) {
+  if (!buf || buf.length < 23) return null;
+  let start = 0;
+  for (let i = 0; i < buf.length - 18; i++) {
+    if (buf[i] === 0x19 || buf[i] === 0x09) {
+      start = i + 4;
+      break;
+    }
+  }
+  if (start === 0 && buf[4] === 0x0f) start = 5;
+  if (start === 0 && buf[3] === 0x0f) start = 4;
+
+  const funcs = [];
+  for (let i = 0; i < 6; i++) {
+    const o = start + i * 3;
+    if (o + 2 >= buf.length) break;
+    const matched = wireToKeyFunc(buf[o], buf[o + 1], buf[o + 2]);
+    funcs.push(matched || "disable");
+  }
+  return funcs.length === 6 ? funcs : null;
+}
+
 /** Defaults matching XML / capture D baseline for AJ179. */
 export function defaultKeyMapFuncs() {
   return ["left", "right", "middle", "backward", "forward", "dpi_loop"];

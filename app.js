@@ -31,6 +31,8 @@ import {
   uiSpeedToWire,
   buildSensorGet,
   parseSensorResponse,
+  buildKeyMapGet,
+  parseKeyMapResponse,
 } from "./protocol.js";
 import { NibbleHid, webHidSupported } from "./hid.js";
 
@@ -1172,12 +1174,29 @@ async function syncProfileFromDevice() {
   } catch {
     /* optional */
   }
+  await sleep(40);
+
+  // Key mappings
+  try {
+    const raw = await xferGet(buildKeyMapGet());
+    const keyFuncs = parseKeyMapResponse(raw);
+    if (keyFuncs && keyFuncs.length === 6) {
+      d.keys.forEach((k) => {
+        if (k.keyValue >= 0 && k.keyValue < 6) {
+          p.keys[k.id] = keyFuncs[k.keyValue];
+        }
+      });
+    }
+  } catch (e) {
+    /* optional */
+  }
 
   saveState();
   renderHome();
   renderDpi();
   renderLight();
   renderSettings();
+  renderKeys();
   renderConnection();
   setStatus(log.length ? `Synced · ${log.join(" · ")}` : "Synced");
   return log;
@@ -1350,7 +1369,7 @@ function renderKeys() {
   });
 
   const keyMeta = d.keys.find((k) => k.id === state.selectedKey) || d.keys[0];
-  const current = p.keys[keyMeta.id];
+  const current = p.keys[keyMeta.id] || keyMeta.defaultFunc;
   document.getElementById("selected-key-label").textContent = `${
     KEY_LABELS[keyMeta.id]
   } → ${FUNC_LABEL[current] || current}`;
