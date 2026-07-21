@@ -235,6 +235,46 @@ const DEVICES = [
     defaultLight: "breathe",
   },
   {
+    id: "aj159apex",
+    name: "AJ159 APEX",
+    type: 104,
+    image: "assets/device/mouse_aj159.png",
+    sensor: "PAW3950 APEX",
+    modes: [
+      { value: 0, desc: "2.4G 8K Dock", vid: "3151", pid: "5007", devId: "M620A" },
+      { value: 1, desc: "2.4G 8K Dock (Alt)", vid: "3151", pid: "502D", devId: "M620A" },
+      { value: 2, desc: "Wired / Receiver", vid: "3537", pid: "1093", devId: "M620A" },
+    ],
+    keys: [
+      { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },
+      { id: 202, keyValue: 1, direction: "left", x: 70.4, y: 29.5, defaultFunc: "right" },
+      { id: 203, keyValue: 2, direction: "bottom", x: 50.2, y: 16.5, defaultFunc: "middle" },
+      { id: 204, keyValue: 4, direction: "right", x: 22.3, y: 40.9, defaultFunc: "forward" },
+      { id: 205, keyValue: 3, direction: "right", x: 22, y: 52.6, defaultFunc: "backward" },
+      { id: 206, keyValue: 5, direction: "left", x: 61.2, y: 54, defaultFunc: "dpi_loop" },
+    ],
+    dpiDefaults: [
+      { value: 400, color: "#FF0000" },
+      { value: 800, color: "#00FF00" },
+      { value: 1200, color: "#0000FF" },
+      { value: 1600, color: "#00FFFF" },
+      { value: 2400, color: "#FFFF00" },
+      { value: 3200, color: "#800080" },
+    ],
+    defaultDpiIndex: 1,
+    reportRates: [125, 250, 500, 1000, 2000, 4000, 8000],
+    defaultRateIndex: 3,
+    lights: [
+      { id: "flow", name: "Flowing light", enable: false },
+      { id: "breathe", name: "Breathing", enable: true },
+      { id: "solid", name: "Constant light", enable: true },
+      { id: "neon", name: "Neon", enable: false },
+      { id: "wave", name: "Colorful waves", enable: false },
+      { id: "off", name: "Close", enable: true },
+    ],
+    defaultLight: "breathe",
+  },
+  {
     id: "aj159mc",
     name: "AJ159 MC",
     type: 103,
@@ -433,6 +473,18 @@ function loadState() {
     // Drop any persisted battery snapshot (old builds saved 100% + charging)
     for (const k of BATTERY_RUNTIME_KEYS) delete merged[k];
     clearBatteryRuntime(merged);
+    // Self-healing: if all keys were overwritten with "disable" by an unsupported GET query, restore device defaults
+    merged.profiles?.forEach((p) => {
+      if (p.keys) {
+        const vals = Object.values(p.keys);
+        if (vals.length > 0 && vals.every((v) => v === "disable")) {
+          const dev = DEVICES.find((d) => d.id === p.deviceId) || DEVICES[0];
+          dev.keys.forEach((k) => {
+            p.keys[k.id] = k.defaultFunc;
+          });
+        }
+      }
+    });
     return merged;
   } catch {
     return defaultState();
@@ -773,9 +825,13 @@ async function connectHid(alreadyOpened = false) {
       if (st && st.devId) {
         match = DEVICES.find(d => d.modes.some(m => m.devId === st.devId));
       }
-      if (!match) {
-        const vidHex = info.vendorId.toString(16).toUpperCase().padStart(4, "0");
-        const pidHex = info.productId.toString(16).toUpperCase().padStart(4, "0");
+      
+      const currentDev = device();
+      const vidHex = info.vendorId.toString(16).toUpperCase().padStart(4, "0");
+      const pidHex = info.productId.toString(16).toUpperCase().padStart(4, "0");
+      const currentMatchesVidPid = currentDev.modes.some(m => m.vid === vidHex && m.pid === pidHex);
+
+      if (!match && !currentMatchesVidPid) {
         match = DEVICES.find(d => d.modes.some(m => m.vid === vidHex && m.pid === pidHex));
       }
       
@@ -784,10 +840,12 @@ async function connectHid(alreadyOpened = false) {
         let idx = state.profiles.findIndex((p) => p.deviceId === state.deviceId);
         if (idx < 0) {
           const p = defaultProfile(state.deviceId);
+          p.name = `Profile ${state.profiles.length + 1}`;
           state.profiles.push(p);
           idx = state.profiles.length - 1;
         }
-        state.activeProfileIndex = idx;
+        state.profileIndex = idx;
+        saveState();
         const sel = document.getElementById("device-select");
         if (sel) sel.value = state.deviceId;
         renderAll();
@@ -1175,21 +1233,6 @@ async function syncProfileFromDevice() {
     /* optional */
   }
   await sleep(40);
-
-  // Key mappings
-  try {
-    const raw = await xferGet(buildKeyMapGet());
-    const keyFuncs = parseKeyMapResponse(raw);
-    if (keyFuncs && keyFuncs.length === 6) {
-      d.keys.forEach((k) => {
-        if (k.keyValue >= 0 && k.keyValue < 6) {
-          p.keys[k.id] = keyFuncs[k.keyValue];
-        }
-      });
-    }
-  } catch (e) {
-    /* optional */
-  }
 
   saveState();
   renderHome();

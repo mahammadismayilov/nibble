@@ -22,8 +22,8 @@ export const CMD = {
   RESET: 0x0f,
 };
 
-export const VIDS = [0x248a, 0x249a];
-export const PIDS = [0x5c2e, 0x5d2e, 0x5e2e, 0x5c2f];
+export const VIDS = [0x248a, 0x249a, 0x3151, 0x3537];
+export const PIDS = [0x5c2e, 0x5d2e, 0x5e2e, 0x5c2f, 0x5007, 0x502d, 0x1093];
 
 /** Checksum from FUN_00448e40 / FUN_00448d40 */
 export function checksum(buf) {
@@ -770,22 +770,26 @@ export function wireToKeyFunc(b0, b1, b2) {
 }
 
 export function buildKeyMapGet() {
-  const buf = alloc(0x41);
-  setHeader(buf, CMD.KEYMAP + 0x10); // 0x19
+  const buf = alloc(0x21);
+  buf[0] = 0x00;
+  buf[1] = 0x19;
   return finalize(buf);
 }
 
 export function parseKeyMapResponse(buf) {
   if (!buf || buf.length < 23) return null;
-  let start = 0;
+  let start = -1;
   for (let i = 0; i < buf.length - 18; i++) {
-    if (buf[i] === 0x19 || buf[i] === 0x09) {
-      start = i + 4;
+    if ((buf[i] === 0x19 || buf[i] === 0x09) && (buf[i + 3] === 0x0f || buf[i + 4] === 0x0f)) {
+      start = buf[i + 3] === 0x0f ? i + 4 : i + 5;
       break;
     }
   }
-  if (start === 0 && buf[4] === 0x0f) start = 5;
-  if (start === 0 && buf[3] === 0x0f) start = 4;
+  if (start < 0) {
+    if (buf[4] === 0x0f) start = 5;
+    else if (buf[3] === 0x0f) start = 4;
+    else start = 5; // fallback
+  }
 
   const funcs = [];
   for (let i = 0; i < 6; i++) {
