@@ -10,9 +10,13 @@
 - **CompX Micro-Controllers**:
   - `VID_248A` (`0x248A`) & `VID_249A` (`0x249A`)
   - Product IDs (PIDs): `0x5C2E`, `0x5D2E`, `0x5E2E`, `0x5C2F`
-- **AJAZZ AJ159 APEX & Yichip/SinoWealth Micro-Controllers**:
+- **AJAZZ AJ159 Series (Yichip / SinoWealth Micro-Controllers)**:
   - `VID_3151` (`0x3151`)
-  - Product IDs (PIDs): `0x5007` (2.4G 8K Screen Dock), `0x502D` (2.4G 8K Dock Alt)
+  - Product IDs (PIDs):
+    - `0x5007` (AJ159 APEX 2.4G 8K Screen Dock)
+    - `0x502D` (AJ159 APEX 2.4G 8K Dock Alt)
+    - `0x402D` (AJ159 PRO 2.4G 8K Dongle)
+    - `0x4026` (AJ159 PRO Wired Cable)
   - *Note*: Keyboard/Trackpad HID entries like `VID_3537` (`0x3537` / `PID 1093`) are NOT mouse hardware IDs and must be excluded from mouse protocol filters.
 - **WebHID Rules**:
   - Always add both Vendor IDs (`VIDS`) and Product IDs (`PIDS`) to `protocol.js` array exports.
