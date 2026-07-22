@@ -235,9 +235,18 @@ export class NibbleHid {
         } catch (e) {
           lastErr = e;
           this.lastError = e;
-          // remove waiter
-          this._waiters = this._waiters.filter((w) => w.timer !== undefined);
+          // Clean up waiter properly
+          clearTimeout(timer);
+          this._waiters = this._waiters.filter((w) => w.resolve !== resolve);
           continue;
+        }
+
+        // If fire-and-forget write is requested and sendReport succeeded, return immediately
+        if (opts.allowNoReply) {
+          clearTimeout(timer);
+          this._waiters = this._waiters.filter((w) => w.resolve !== resolve);
+          this.frameMode = att.name;
+          return new Uint8Array(33);
         }
 
         try {
@@ -252,8 +261,8 @@ export class NibbleHid {
         } catch (e) {
           lastErr = e;
           this.lastError = e;
-          // Write succeeded even if read timed out — fire-and-forget for allowNoReply / exact writes
-          if (opts.allowNoReply || exact) {
+          // Write succeeded even if read timed out — fire-and-forget for exact writes
+          if (exact) {
             this.frameMode = att.name;
             return new Uint8Array(33);
           }
