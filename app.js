@@ -1534,9 +1534,11 @@ function renderDpi() {
   const slider = document.getElementById("dpi-slider");
   const input = document.getElementById("dpi-input");
   const color = document.getElementById("dpi-color");
+  const maxDpiLimit = d.sensor && d.sensor.includes("3950") ? 30000 : 26000;
+  slider.max = String(maxDpiLimit);
   slider.step = p.settings.fineDpi ? "50" : "100";
-  slider.value = stage.value;
-  input.value = stage.value;
+  slider.value = Math.min(maxDpiLimit, stage.value);
+  input.value = Math.min(maxDpiLimit, stage.value);
   color.value = toHex(stage.color);
 
   const rates = document.getElementById("rate-options");
@@ -1559,9 +1561,11 @@ function renderDpi() {
 
 function bindDpiEditors() {
   const apply = (val) => {
+    const d = device();
     const p = profile();
     const step = p.settings.fineDpi ? 50 : 100;
-    const n = Math.min(26000, Math.max(50, Math.round(Number(val) / step) * step));
+    const maxDpiLimit = d.sensor && d.sensor.includes("3950") ? 30000 : 26000;
+    const n = Math.min(maxDpiLimit, Math.max(50, Math.round(Number(val) / step) * step));
     p.dpiStages[selectedDpiStage].value = n;
     document.getElementById("dpi-slider").value = n;
     document.getElementById("dpi-input").value = n;
