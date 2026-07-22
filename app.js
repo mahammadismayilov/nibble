@@ -379,7 +379,7 @@ async function flushDeviceWrites() {
     }
 
     if (scopes.has("rate")) {
-      await send(buildReportRate(p.reportRateIndex), { allowNoReply: false });
+      await send(buildReportRate(p.reportRateIndex), { allowNoReply: true });
     }
     if (scopes.has("dpi") || scopes.has("light")) {
       if (scopes.has("dpi")) {
@@ -389,24 +389,24 @@ async function flushDeviceWrites() {
             p.activeDpi,
             0
           ),
-          { allowNoReply: false }
+          { allowNoReply: true }
         );
       }
       await send(
         buildDpiRgb(p.dpiStages.map((s) => s.color || "#ffffff")),
-        { exact: true }
+        { exact: true, allowNoReply: true }
       );
     }
     if (scopes.has("light")) {
-      await send(buildLightPacketFromUi(p), { exact: true });
+      await send(buildLightPacketFromUi(p), { exact: true, allowNoReply: true });
     }
     if (scopes.has("keys")) {
       const funcs = keyFuncsInWireOrder(p, d);
       const unknown = funcs.filter((f) => !KEY_FUNC_PROVEN.has(f));
       if (!unknown.length) {
         const kbuf = buildKeyMap(funcs);
-        await send(kbuf, { exact: true });
-        await send(kbuf, { exact: true });
+        await send(kbuf, { exact: true, allowNoReply: true });
+        await send(kbuf, { exact: true, allowNoReply: true });
       }
     }
     if (scopes.has("sensor")) {
@@ -416,7 +416,7 @@ async function flushDeviceWrites() {
           angleSnap: p.settings.angleSnap,
           ripple: p.settings.ripple,
         }),
-        { allowNoReply: false }
+        { allowNoReply: true }
       );
     }
     if (scopes.has("power")) {

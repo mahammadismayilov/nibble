@@ -257,10 +257,10 @@ export class NibbleHid {
         } catch (e) {
           lastErr = e;
           this.lastError = e;
-          // Write may have succeeded even without IN — for exact mode, don't fail if send worked
-          if (exact && att.name === "strip1") {
-            this.frameMode = "strip1";
-            // fall through to try get a response once more next retry
+          // Write succeeded even if read timed out — fire-and-forget for allowNoReply / exact writes
+          if (opts.allowNoReply || exact) {
+            this.frameMode = att.name;
+            return new Uint8Array(33);
           }
         }
       }
@@ -271,7 +271,7 @@ export class NibbleHid {
       return lastRx;
     }
 
-    // Last resort: fire-and-forget strip1 (official WriteFile doesn't always need our ACK heuristic)
+    // Last resort: fire-and-forget strip1
     if (exact || opts.allowNoReply) {
       try {
         await this.device.sendReport(0, packet.slice(1));
