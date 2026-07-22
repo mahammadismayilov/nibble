@@ -18,6 +18,9 @@
     - `0x402D` (AJ159 PRO 2.4G 8K Dongle)
     - `0x4026` (AJ159 PRO Wired Cable)
   - *Note*: Keyboard/Trackpad HID entries like `VID_3537` (`0x3537` / `PID 1093`) are NOT mouse hardware IDs and must be excluded from mouse protocol filters.
+- **Strict Per-Model Isolation Rule**:
+  - Never use global defaults (such as hardcoded 26,000 DPI caps or global polling rate arrays).
+  - Every device profile in `DEVICES` must explicitly specify its own isolated `maxDpi` (`26000` for PAW3395, `30000` for PAW3950 APEX), `reportRates` (`[125..1000]` for 1K models vs `[125..8000]` for 8K models), `defaultRateIndex`, and `dpiDefaults`.
 - **WebHID Rules**:
   - Always add both Vendor IDs (`VIDS`) and Product IDs (`PIDS`) to `protocol.js` array exports.
   - Do NOT filter out wired or wireless mode interfaces when users report connectivity issues.
