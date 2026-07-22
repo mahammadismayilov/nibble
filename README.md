@@ -42,7 +42,7 @@ Then open **http://localhost:8080** in Chrome or Edge.
 
 ### First connection
 
-1. Close any OEM mouse software (AJAZZ, etc.)
+1. Close any OEM mouse software (AJAZZ, Attack Shark, VXE, etc.)
 2. Plug in your wireless receiver
 3. Click **Connect** in Nibble
 4. Pick **Wireless-Receiver / config** (not mouse/keyboard)
@@ -67,6 +67,9 @@ git clone https://github.com/mahammadismayilov/nibble.git
 | **AJAZZ AJ159 PRO** | PAW3395 | 26,000 DPI | 8000 Hz (8K) | Yichip (`VID_3151` · `PID_402D` / `4026`) | Community Test Pending |
 | **AJAZZ AJ159 / AJ159P / MC** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A` / `249A`) | Protocol Supported |
 | **AJAZZ AJ139 Pro** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A` / `249A`) | Protocol Supported |
+| **Attack Shark R1** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A`) | Protocol Supported |
+| **Attack Shark X3** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A`) | Protocol Supported |
+| **VXE Dragonfly F1** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A`) | Protocol Supported |
 
 > View the live [Supported Devices Catalog](https://nibble.qafqazsiradaglari.xyz/devices.html) for full specs and test status.
 
@@ -81,4 +84,4 @@ GPL-3.0 — see [LICENSE](./LICENSE).
 ---
 
 Unofficial community project. Not affiliated with any mouse OEM.  
-Protocol derived from **AJAZZ Driver (X) 1.0.1.4** (2024.01.04).
+Protocol originally derived from **AJAZZ Driver (X) 1.0.1.4** (2024.01.04). The same CompX/Yichip protocol is shared across multiple brands.
