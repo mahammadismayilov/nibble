@@ -24,13 +24,6 @@ import {
   KEY_FUNC_PROVEN,
   lightIdToWire,
   wireToLightId,
-} from "./protocol.js";
-
-import {
-  pingActiveSession,
-  sendHardwareTelemetry,
-  sendErrorTelemetry,
-} from "./telemetry.js";
   parseStatus,
   normalizeBatteryPercent,
   bufToHex,
@@ -41,6 +34,13 @@ import {
   buildKeyMapGet,
   parseKeyMapResponse,
 } from "./protocol.js";
+
+import {
+  pingActiveSession,
+  sendHardwareTelemetry,
+  sendErrorTelemetry,
+} from "./telemetry.js";
+import { profileRegistry } from "./profiles/registry.js";
 import { NibbleHid, webHidSupported } from "./hid.js";
 
 const APP_NAME = "Nibble";
