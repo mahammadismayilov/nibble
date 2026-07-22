@@ -20,13 +20,8 @@ export function webHidSupported() {
 export function deviceFilters() {
   const filters = [];
   for (const vendorId of VIDS) {
-    for (const productId of PIDS) {
-      // Config collection signature (usage page 1 / usage 0)
-      filters.push({ vendorId, productId, usagePage: 0x01, usage: 0x00 });
-      filters.push({ vendorId, productId, usagePage: 0xff00, usage: 0x00 });
-      filters.push({ vendorId, productId, usagePage: 0xff00, usage: 0x01 });
-      filters.push({ vendorId, productId });
-    }
+    // Filter by Vendor ID (under Chrome's 64 filter limit)
+    filters.push({ vendorId });
   }
   return filters;
 }
