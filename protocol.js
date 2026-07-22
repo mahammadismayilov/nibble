@@ -61,7 +61,7 @@ function setHeader(buf, cmd) {
  * Types 4, 0x10, 0x12, 0x35: dpi/100
  */
 export function encodeDpi(dpi, sensorType = 0) {
-  const d = Math.max(50, Math.min(26000, dpi | 0));
+  const d = Math.max(50, Math.min(42000, dpi | 0));
   if (sensorType === 0x11) {
     if (d > 10000) return ((d - 10000) / 100 + 200) | 0;
     return (d / 100) | 0;
@@ -96,17 +96,16 @@ export function buildStatusQuery() {
 
 /**
  * Report rate — FUN_004338d0
- * rateIndex: 0..3 for 125/250/500/1000
+ * rateIndex: 0..6 for 125, 250, 500, 1000, 2000, 4000, 8000 Hz
  */
 export function encodeRateIndex(idx) {
-  // rateIndex: 0=125, 1=250, 2=500, 3=1000
-  // bInterval: 8=125, 4=250, 2=500, 1=1000
-  const map = { 0: 8, 1: 4, 2: 2, 3: 1 };
-  return map[idx] || 1;
+  // rateIndex: 0=125, 1=250, 2=500, 3=1000, 4=2000, 5=4000, 6=8000
+  const map = { 0: 8, 1: 4, 2: 2, 3: 1, 4: 0x20, 5: 0x40, 6: 0x80 };
+  return map[idx] !== undefined ? map[idx] : 1;
 }
 
 export function decodeRateWire(wireValue) {
-  const map = { 8: 0, 4: 1, 2: 2, 1: 3 };
+  const map = { 8: 0, 4: 1, 2: 2, 1: 3, 0x20: 4, 0: 4, 0x40: 5, 0x80: 6 };
   return map[wireValue] !== undefined ? map[wireValue] : 3;
 }
 
