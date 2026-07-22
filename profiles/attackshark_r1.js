@@ -3,7 +3,7 @@ export const profile = {
   name: "Attack Shark R1",
   type: 201,
   driver: "yichip",
-  image: "assets/device/mouse_aj159.png",
+  image: "assets/device/mouse_attackshark_r1.png",
   sensor: "PAW3311",
   maxDpi: 18000,
   modes: [

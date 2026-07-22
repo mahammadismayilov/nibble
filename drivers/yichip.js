@@ -5,8 +5,14 @@ import { DriverPlugin } from "./base.js";
  * Encapsulates 65-byte feature reports, 8K Hz rate maps, and screen dock commands.
  */
 export class YichipDriver extends DriverPlugin {
-  constructor() {
-    super("yichip", "Yichip Solution", [0x3151]);
+  constructor(options = {}) {
+    super("yichip", "Yichip Solution", [0x3151], {
+      allowNoReply: true, // Yichip receivers do not send ACK reports for setting writes
+      timeoutMs: 500,
+      retries: 2,
+      preferStrip1: true,
+      ...options,
+    });
   }
 
   checksum(buf) {

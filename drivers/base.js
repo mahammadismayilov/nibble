@@ -3,10 +3,17 @@
  * Abstract driver class extended by CompX, Yichip, and future MCU drivers.
  */
 export class DriverPlugin {
-  constructor(id, name, vids) {
+  constructor(id, name, vids, options = {}) {
     this.id = id;
     this.name = name;
     this.vids = vids;
+    this.options = {
+      allowNoReply: options.allowNoReply ?? true,
+      timeoutMs: options.timeoutMs ?? 900,
+      retries: options.retries ?? 2,
+      preferStrip1: options.preferStrip1 ?? true,
+      ...options,
+    };
   }
 
   /**
@@ -15,6 +22,19 @@ export class DriverPlugin {
   supportsVendor(vid) {
     const num = typeof vid === "string" ? parseInt(vid.replace("0x", ""), 16) : vid;
     return this.vids.includes(num);
+  }
+
+  /**
+   * Returns WebHID transfer options tailored to this hardware driver & scope.
+   */
+  getTransferOptions(scope = "general", overrides = {}) {
+    return {
+      timeoutMs: this.options.timeoutMs,
+      retries: this.options.retries,
+      preferStrip1: this.options.preferStrip1,
+      allowNoReply: this.options.allowNoReply,
+      ...overrides,
+    };
   }
 
   /** Status / battery query packet */

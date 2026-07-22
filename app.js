@@ -362,15 +362,19 @@ async function flushDeviceWrites() {
   _pendingScopes.clear();
   const p = profile();
   const d = device();
+  const activeDriver = driverRegistry.getDriverForDevice(d) || driverRegistry.getDriverForVendor(hid.info?.vendorId);
 
-  const send = async (buf, opts = {}) => {
-    await hid.xfer(buf, {
-      timeoutMs: 900,
-      retries: 2,
-      preferStrip1: true,
-      allowNoReply: true,
-      ...opts,
-    });
+  const send = async (buf, opts = {}, scope = "general") => {
+    const xferOpts = activeDriver
+      ? activeDriver.getTransferOptions(scope, opts)
+      : {
+          timeoutMs: 900,
+          retries: 2,
+          preferStrip1: true,
+          allowNoReply: true,
+          ...opts,
+        };
+    await hid.xfer(buf, xferOpts);
     await sleep(30);
   };
 
@@ -385,7 +389,7 @@ async function flushDeviceWrites() {
     }
 
     if (scopes.has("rate")) {
-      await send(buildReportRate(p.reportRateIndex), { allowNoReply: true });
+      await send(buildReportRate(p.reportRateIndex), {}, "rate");
     }
     if (scopes.has("dpi") || scopes.has("light")) {
       if (scopes.has("dpi")) {
@@ -395,24 +399,26 @@ async function flushDeviceWrites() {
             p.activeDpi,
             0
           ),
-          { allowNoReply: true }
+          {},
+          "dpi"
         );
       }
       await send(
         buildDpiRgb(p.dpiStages.map((s) => s.color || "#ffffff")),
-        { exact: true, allowNoReply: true }
+        { exact: true },
+        "dpiRgb"
       );
     }
     if (scopes.has("light")) {
-      await send(buildLightPacketFromUi(p), { exact: true, allowNoReply: true });
+      await send(buildLightPacketFromUi(p), { exact: true }, "light");
     }
     if (scopes.has("keys")) {
       const funcs = keyFuncsInWireOrder(p, d);
       const unknown = funcs.filter((f) => !KEY_FUNC_PROVEN.has(f));
       if (!unknown.length) {
         const kbuf = buildKeyMap(funcs);
-        await send(kbuf, { exact: true, allowNoReply: true });
-        await send(kbuf, { exact: true, allowNoReply: true });
+        await send(kbuf, { exact: true }, "keys");
+        await send(kbuf, { exact: true }, "keys");
       }
     }
     if (scopes.has("sensor")) {
@@ -422,7 +428,8 @@ async function flushDeviceWrites() {
           angleSnap: p.settings.angleSnap,
           ripple: p.settings.ripple,
         }),
-        { allowNoReply: true }
+        {},
+        "sensor"
       );
     }
     if (scopes.has("power")) {
@@ -433,7 +440,8 @@ async function flushDeviceWrites() {
           moveCloseLight: p.settings.moveCloseLight,
           debounce: p.settings.debounce,
         }),
-        { allowNoReply: true }
+        {},
+        "power"
       );
     }
   } finally {

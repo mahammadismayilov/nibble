@@ -5,8 +5,14 @@ import { DriverPlugin } from "./base.js";
  * Encapsulates CompX 33-byte HID packets & checksum logic.
  */
 export class CompXDriver extends DriverPlugin {
-  constructor() {
-    super("compx", "CompX Solution", [0x248a, 0x249a]);
+  constructor(options = {}) {
+    super("compx", "CompX Solution", [0x248a, 0x249a], {
+      allowNoReply: true,
+      timeoutMs: 900,
+      retries: 2,
+      preferStrip1: true,
+      ...options,
+    });
   }
 
   checksum(buf) {
