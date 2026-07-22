@@ -19,6 +19,15 @@ class DriverRegistry {
     return this.drivers.get(driverId) || compxDriver;
   }
 
+  getDriverForDevice(device) {
+    if (!device) return compxDriver;
+    return this.getDriver(device.driver);
+  }
+
+  getDriverForVendor(vid) {
+    return this.getDriverForVid(vid);
+  }
+
   getDriverForVid(vid) {
     const num = typeof vid === "string" ? parseInt(vid.replace("0x", ""), 16) : vid;
     for (const driver of this.drivers.values()) {
