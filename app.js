@@ -24,6 +24,13 @@ import {
   KEY_FUNC_PROVEN,
   lightIdToWire,
   wireToLightId,
+} from "./protocol.js";
+
+import {
+  pingActiveSession,
+  sendHardwareTelemetry,
+  sendErrorTelemetry,
+} from "./telemetry.js";
   parseStatus,
   normalizeBatteryPercent,
   bufToHex,
@@ -582,6 +589,14 @@ async function connectHid(alreadyOpened = false) {
     clearBatteryRuntime();
     renderConnection();
     toast("Connected");
+
+    // Anonymous Hardware Detection Telemetry
+    if (info?.vendorId && info?.productId) {
+      const vHex = `0x${info.vendorId.toString(16).toUpperCase().padStart(4, "0")}`;
+      const pHex = `0x${info.productId.toString(16).toUpperCase().padStart(4, "0")}`;
+      const match = profileRegistry?.findProfile?.(info.vendorId, info.productId);
+      sendHardwareTelemetry(vHex, pHex, info.productName || "HID Mouse", !!match);
+    }
     setStatus(
       `Connected · ${info.productName || "mouse"} (${info.vendorId
         .toString(16)
@@ -1862,7 +1877,11 @@ document.getElementById("btn-landing-connect")?.addEventListener("click", async 
 });
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("DOMContentLoaded", () => {
+    init();
+    pingActiveSession();
+  });
 } else {
   init();
+  pingActiveSession();
 }
