@@ -51,3 +51,14 @@
   - Do NOT use 3D grid cards or `transform: translateY(-4px)` hover animations on catalog items.
 - **Container Centering**:
   - Ensure all layout sections preserve explicit horizontal auto margins (`margin-left: auto; margin-right: auto;`) on `.container` elements to avoid left-alignment bugs.
+
+### 5. Modular Plugin-Based Architecture Rules
+- **Decoupled Driver Engines (`app/drivers/`)**:
+  - All protocol binary packet builders and checksum logic are decoupled into driver plugins extending `DriverPlugin` (`base.js`).
+  - `compx.js`: CompX Engine (`VID_248A` / `VID_249A`).
+  - `yichip.js`: Yichip / SinoWealth Engine (`VID_3151`).
+  - `registry.js`: Central `driverRegistry` auto-matcher matching WebHID `vendorId` to driver instance.
+- **Declarative Hardware Profiles (`app/profiles/`)**:
+  - Do NOT hardcode inline device arrays in `app.js`.
+  - Every mouse model lives in its own CORS-safe ES Module manifest (`aj179.js`, `aj159apex.js`, `aj159pro.js`, etc.) imported by `profileRegistry`.
+  - Adding a new mouse model requires only adding a profile ES Module file under `app/profiles/` and registering it in `profiles/registry.js`.
