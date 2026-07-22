@@ -1,19 +1,24 @@
 # Nibble
 
 <p>
+  <a href="https://app.qafqazsiradaglari.xyz"><strong>Launch Web App ⚡</strong></a> ·
   <a href="https://nibble.qafqazsiradaglari.xyz"><strong>Website</strong></a> ·
-  <a href="https://github.com/mahammadismayilov/nibble/releases"><strong>Download</strong></a> ·
+  <a href="https://github.com/mahammadismayilov/nibble/releases"><strong>Releases</strong></a> ·
   <a href="https://nibble.qafqazsiradaglari.xyz/#pricing"><strong>Support</strong></a>
 </p>
 
-Browser-based WebHID mouse configurator for PAW3395-class wireless mice.  
-Configure DPI, polling rate, lighting, keys, and power — no Windows installer, no OEM bloat.
+Browser-based WebHID mouse configurator for PAW3395 & PAW3950 wireless gaming mice.  
+Configure DPI, 8K polling rate, lighting, keys, and power — no Windows installer, no OEM bloat.
 
 ---
 
 ![Nibble screenshot](assets/screenshot.png)
 
 ## Quick start
+
+### 🌐 Web App (No Install)
+
+Open **[app.qafqazsiradaglari.xyz](https://app.qafqazsiradaglari.xyz)** in **Chrome** or **Edge** — WebHID talks to your mouse receiver directly in browser!
 
 **You need Chrome or Edge** — WebHID doesn't work in Firefox or Safari.
 
