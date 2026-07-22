@@ -433,7 +433,7 @@ async function flushDeviceWrites() {
           moveCloseLight: p.settings.moveCloseLight,
           debounce: p.settings.debounce,
         }),
-        { allowNoReply: false }
+        { allowNoReply: true }
       );
     }
   } finally {
