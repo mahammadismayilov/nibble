@@ -119,10 +119,11 @@ function initTheme() {
 const DEVICES = [
   {
     id: "aj179",
-    name: "AJ179",
+    name: "AJ179 / AJ179P",
     type: 105,
     image: "assets/device/mouse_aj179.png",
     sensor: "PAW3395",
+    maxDpi: 26000,
     modes: [
       { value: 0, desc: "USB", vid: "248A", pid: "5C2E", devId: "M179" },
       { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M179" },
@@ -157,11 +158,52 @@ const DEVICES = [
     defaultLight: "breathe",
   },
   {
+    id: "aj179apex",
+    name: "AJ179 APEX",
+    type: 106,
+    image: "assets/device/mouse_aj179.png",
+    sensor: "PAW3950 APEX",
+    maxDpi: 30000,
+    modes: [
+      { value: 0, desc: "2.4G 8K Dock", vid: "3151", pid: "5007", devId: "M179A" },
+      { value: 1, desc: "2.4G 8K Dock (Alt)", vid: "3151", pid: "502D", devId: "M179A" },
+    ],
+    keys: [
+      { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },
+      { id: 202, keyValue: 1, direction: "left", x: 70.4, y: 29.5, defaultFunc: "right" },
+      { id: 203, keyValue: 2, direction: "bottom", x: 50.2, y: 16.5, defaultFunc: "middle" },
+      { id: 204, keyValue: 4, direction: "right", x: 22.3, y: 40.9, defaultFunc: "forward" },
+      { id: 205, keyValue: 3, direction: "right", x: 22, y: 52.6, defaultFunc: "backward" },
+      { id: 206, keyValue: 5, direction: "left", x: 61.2, y: 54, defaultFunc: "dpi_loop" },
+    ],
+    dpiDefaults: [
+      { value: 400, color: "#FF0000" },
+      { value: 800, color: "#00FF00" },
+      { value: 1200, color: "#0000FF" },
+      { value: 1600, color: "#00FFFF" },
+      { value: 2400, color: "#FFFF00" },
+      { value: 3200, color: "#800080" },
+    ],
+    defaultDpiIndex: 1,
+    reportRates: [125, 250, 500, 1000, 2000, 4000, 8000],
+    defaultRateIndex: 3,
+    lights: [
+      { id: "flow", name: "Flowing light", enable: false },
+      { id: "breathe", name: "Breathing", enable: true },
+      { id: "solid", name: "Constant light", enable: true },
+      { id: "neon", name: "Neon", enable: false },
+      { id: "wave", name: "Colorful waves", enable: false },
+      { id: "off", name: "Close", enable: true },
+    ],
+    defaultLight: "breathe",
+  },
+  {
     id: "aj139pro",
     name: "AJ139 Pro",
     type: 101,
     image: "assets/device/mouse_aj139pro.png",
     sensor: "PAW3395",
+    maxDpi: 26000,
     modes: [
       { value: 0, desc: "USB", vid: "248A", pid: "5C2E", devId: "M129" },
       { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M129" },
@@ -201,6 +243,7 @@ const DEVICES = [
     type: 102,
     image: "assets/device/mouse_aj159.png",
     sensor: "PAW3395",
+    maxDpi: 26000,
     modes: [
       { value: 0, desc: "USB", vid: "248A", pid: "5C2E", devId: "M620" },
       { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M620" },
@@ -240,6 +283,7 @@ const DEVICES = [
     type: 104,
     image: "assets/device/mouse_aj159.png",
     sensor: "PAW3950 APEX",
+    maxDpi: 30000,
     modes: [
       { value: 0, desc: "2.4G 8K Dock", vid: "3151", pid: "5007", devId: "M620A" },
       { value: 1, desc: "2.4G 8K Dock (Alt)", vid: "3151", pid: "502D", devId: "M620A" },
@@ -279,6 +323,7 @@ const DEVICES = [
     type: 105,
     image: "assets/device/mouse_aj159.png",
     sensor: "PAW3395",
+    maxDpi: 26000,
     modes: [
       { value: 0, desc: "2.4G 8K Dongle", vid: "3151", pid: "402D", devId: "M620P" },
       { value: 1, desc: "Wired USB", vid: "3151", pid: "4026", devId: "M620P" },
@@ -318,6 +363,7 @@ const DEVICES = [
     type: 103,
     image: "assets/device/mouse_aj159mc.png",
     sensor: "PAW3395",
+    maxDpi: 26000,
     modes: [
       { value: 0, desc: "USB", vid: "248A", pid: "5C2E", devId: "M630" },
       { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M630" },
@@ -1534,7 +1580,7 @@ function renderDpi() {
   const slider = document.getElementById("dpi-slider");
   const input = document.getElementById("dpi-input");
   const color = document.getElementById("dpi-color");
-  const maxDpiLimit = d.sensor && d.sensor.includes("3950") ? 30000 : 26000;
+  const maxDpiLimit = d.maxDpi || 26000;
   slider.max = String(maxDpiLimit);
   slider.step = p.settings.fineDpi ? "50" : "100";
   slider.value = Math.min(maxDpiLimit, stage.value);
@@ -1564,7 +1610,7 @@ function bindDpiEditors() {
     const d = device();
     const p = profile();
     const step = p.settings.fineDpi ? 50 : 100;
-    const maxDpiLimit = d.sensor && d.sensor.includes("3950") ? 30000 : 26000;
+    const maxDpiLimit = d.maxDpi || 26000;
     const n = Math.min(maxDpiLimit, Math.max(50, Math.round(Number(val) / step) * step));
     p.dpiStages[selectedDpiStage].value = n;
     document.getElementById("dpi-slider").value = n;
