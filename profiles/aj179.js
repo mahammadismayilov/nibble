@@ -9,6 +9,7 @@ export const profile = {
   modes: [
     { value: 0, desc: "USB", vid: "248A", pid: "5C2E", devId: "M179" },
     { value: 1, desc: "2.4G", vid: "248A", pid: "5C2F", devId: "M179" },
+    { value: 2, desc: "2.4G (Alt)", vid: "249A", pid: "5C2F", devId: "M179" },
   ],
   keys: [
     { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },

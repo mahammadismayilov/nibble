@@ -35,16 +35,19 @@ class ProfileRegistry {
     return this.profiles.find((p) => p.id === id) || this.profiles[0];
   }
 
+  findProfile(vid, pid) {
+    return this.findProfileByHid(vid, pid);
+  }
+
   findProfileByHid(vid, pid) {
-    const vidHex = typeof vid === "number" ? vid.toString(16).toUpperCase() : String(vid).toUpperCase();
-    const pidHex = typeof pid === "number" ? pid.toString(16).toUpperCase() : String(pid).toUpperCase();
+    const vidHex = typeof vid === "number" ? vid.toString(16).toUpperCase().padStart(4, "0") : String(vid).replace("0x", "").toUpperCase().padStart(4, "0");
+    const pidHex = typeof pid === "number" ? pid.toString(16).toUpperCase().padStart(4, "0") : String(pid).replace("0x", "").toUpperCase().padStart(4, "0");
 
     for (const p of this.profiles) {
       for (const m of p.modes) {
-        if (
-          m.vid.toUpperCase() === vidHex &&
-          (m.pid.toUpperCase() === pidHex || m.pid.padStart(4, "0").toUpperCase() === pidHex.padStart(4, "0"))
-        ) {
+        const mVid = m.vid.replace("0x", "").toUpperCase().padStart(4, "0");
+        const mPid = m.pid.replace("0x", "").toUpperCase().padStart(4, "0");
+        if (mVid === vidHex && mPid === pidHex) {
           return p;
         }
       }
