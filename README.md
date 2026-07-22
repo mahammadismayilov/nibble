@@ -54,7 +54,16 @@ git clone https://github.com/mahammadismayilov/nibble.git
 
 ## Supported devices
 
-Primarily AJ179 / AJ179P (PAW3395) and related 248A/249A receivers.
+| Model | Sensor | Max DPI | Max Polling Rate | Receiver / Hardware IDs | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **AJAZZ AJ179 / AJ179P** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A` / `249A`) | Verified Working |
+| **AJAZZ AJ179 APEX** | PAW3950 APEX | 30,000 DPI | 8000 Hz (8K) | Yichip (`VID_3151` · `PID_5007` / `502D`) | Protocol Supported |
+| **AJAZZ AJ159 APEX** | PAW3950 APEX | 30,000 DPI | 8000 Hz (8K) | Yichip (`VID_3151` · `PID_5007` / `502D`) | Community Test Pending |
+| **AJAZZ AJ159 PRO** | PAW3395 | 26,000 DPI | 8000 Hz (8K) | Yichip (`VID_3151` · `PID_402D` / `4026`) | Community Test Pending |
+| **AJAZZ AJ159 / AJ159P / MC** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A` / `249A`) | Protocol Supported |
+| **AJAZZ AJ139 Pro** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A` / `249A`) | Protocol Supported |
+
+> View the live [Supported Devices Catalog](https://nibble.qafqazsiradaglari.xyz/devices.html) for full specs and test status.
 
 ## Why a local server?
 
