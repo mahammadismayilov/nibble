@@ -1,0 +1,38 @@
+export const profile = {
+  id: "attackshark_x3",
+  name: "Attack Shark X3",
+  type: 202,
+  driver: "compx",
+  image: "assets/device/mouse_aj159.png",
+  sensor: "PAW3395",
+  maxDpi: 26000,
+  modes: [
+    { value: 0, desc: "2.4G Receiver", vid: "248A", pid: "5C2F", devId: "AS_X3" },
+    { value: 1, desc: "Wired USB", vid: "248A", pid: "5C2E", devId: "AS_X3" },
+  ],
+  keys: [
+    { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },
+    { id: 202, keyValue: 1, direction: "left", x: 70.4, y: 29.5, defaultFunc: "right" },
+    { id: 203, keyValue: 2, direction: "bottom", x: 50.2, y: 16.5, defaultFunc: "middle" },
+    { id: 204, keyValue: 4, direction: "right", x: 22.3, y: 40.9, defaultFunc: "forward" },
+    { id: 205, keyValue: 3, direction: "right", x: 22, y: 52.6, defaultFunc: "backward" },
+    { id: 206, keyValue: 5, direction: "left", x: 61.2, y: 54, defaultFunc: "dpi_loop" },
+  ],
+  dpiDefaults: [
+    { value: 400, color: "#FF0000" },
+    { value: 800, color: "#00FF00" },
+    { value: 1200, color: "#0000FF" },
+    { value: 1600, color: "#00FFFF" },
+    { value: 2400, color: "#FFFF00" },
+    { value: 3200, color: "#800080" },
+  ],
+  defaultDpiIndex: 1,
+  reportRates: [125, 250, 500, 1000],
+  defaultRateIndex: 3,
+  lights: [
+    { id: "breathe", name: "Breathing", enable: true },
+    { id: "solid", name: "Constant light", enable: true },
+    { id: "off", name: "Close", enable: true },
+  ],
+  defaultLight: "breathe",
+};

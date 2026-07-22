@@ -5,6 +5,9 @@ import { profile as aj159pro } from "./aj159pro.js";
 import { profile as aj159 } from "./aj159.js";
 import { profile as aj159mc } from "./aj159mc.js";
 import { profile as aj139pro } from "./aj139pro.js";
+import { profile as attackshark_r1 } from "./attackshark_r1.js";
+import { profile as attackshark_x3 } from "./attackshark_x3.js";
+import { profile as vxe_f1 } from "./vxe_f1.js";
 
 export const PROFILES = [
   aj179,
@@ -14,6 +17,9 @@ export const PROFILES = [
   aj159apex,
   aj159pro,
   aj159mc,
+  attackshark_r1,
+  attackshark_x3,
+  vxe_f1,
 ];
 
 class ProfileRegistry {
