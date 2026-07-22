@@ -100,13 +100,14 @@ export function buildStatusQuery() {
  */
 export function encodeRateIndex(idx) {
   // rateIndex: 0=125, 1=250, 2=500, 3=1000, 4=2000, 5=4000, 6=8000
-  const map = { 0: 8, 1: 4, 2: 2, 3: 1, 4: 0x20, 5: 0x40, 6: 0x80 };
-  return map[idx] !== undefined ? map[idx] : 1;
+  // Classic 1K bInterval (0..3): 8, 4, 2, 1. High-speed 8K rates (4..6): index 4, 5, 6.
+  const map = { 0: 8, 1: 4, 2: 2, 3: 1, 4: 4, 5: 5, 6: 6 };
+  return map[idx] !== undefined ? map[idx] : idx;
 }
 
 export function decodeRateWire(wireValue) {
-  const map = { 8: 0, 4: 1, 2: 2, 1: 3, 0x20: 4, 0: 4, 0x40: 5, 0x80: 6 };
-  return map[wireValue] !== undefined ? map[wireValue] : 3;
+  const map = { 8: 0, 4: 1, 2: 2, 1: 3, 5: 5, 6: 6 };
+  return map[wireValue] !== undefined ? map[wireValue] : (wireValue >= 4 ? wireValue : 3);
 }
 
 export function buildReportRate(rateIndex) {
