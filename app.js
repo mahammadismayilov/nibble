@@ -123,7 +123,6 @@ function initTheme() {
   });
 }
 
-import { profileRegistry } from "./profiles/registry.js";
 import { driverRegistry } from "./drivers/registry.js";
 
 const DEVICES = profileRegistry.getAllProfiles();
