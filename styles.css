@@ -2598,6 +2598,15 @@ input[type="color"]:hover {
   color: var(--muted-foreground);
 }
 
+.landing-telemetry-notice {
+  margin-top: 14px;
+  max-width: 480px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  opacity: 0.85;
+}
+
 .landing-grid {
   display: flex;
   flex-wrap: wrap;

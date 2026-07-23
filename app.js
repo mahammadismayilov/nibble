@@ -110,7 +110,7 @@ function init() {
   startupCheck();
 }
 
-function showLandingScreen(devices) {
+function showLandingScreen(grantedDevices) {
   const landing = document.getElementById("landing-screen");
   const main = document.getElementById("main-app");
   if (!landing || !main) return;
@@ -122,16 +122,15 @@ function showLandingScreen(devices) {
   if (!grid) return;
   grid.innerHTML = "";
 
-  if (devices.length > 0) {
-    devices.forEach((dev) => {
+  if (grantedDevices && grantedDevices.length > 0) {
+    grantedDevices.forEach((dev) => {
       const card = document.createElement("div");
       card.className = "landing-card";
-      let img = "assets/device/mouse_aj179.png";
       const name = dev.productName || "AJAZZ Mouse";
-
       card.innerHTML = `
-        <img src="${img}" alt="${name}" />
+        <img src="assets/device/mouse_aj179.png" alt="${name}" />
         <h3>${name}</h3>
+        <span class="badge success">Connected</span>
       `;
       card.addEventListener("click", async () => {
         try {
@@ -142,6 +141,27 @@ function showLandingScreen(devices) {
         } catch (e) {
           console.error(e);
         }
+      });
+      grid.appendChild(card);
+    });
+  } else {
+    // Show supported profile catalog so user can select any device and explore all pages
+    DEVICES.slice(0, 4).forEach((dev) => {
+      const card = document.createElement("div");
+      card.className = "landing-card";
+      const img = dev.image || "assets/device/mouse_aj179.png";
+      card.innerHTML = `
+        <img src="${img}" alt="${dev.name}" />
+        <h3>${dev.name}</h3>
+        <span class="badge subtle">${dev.sensor || "PAW3395"}</span>
+      `;
+      card.addEventListener("click", () => {
+        state.deviceId = dev.id;
+        const devSel = document.getElementById("device-select");
+        if (devSel) devSel.value = dev.id;
+        landing.style.display = "none";
+        main.style.display = "";
+        renderAll();
       });
       grid.appendChild(card);
     });
