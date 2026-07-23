@@ -31,6 +31,7 @@ function detectOS() {
 }
 
 function detectBrowser() {
+  if (typeof window !== "undefined" && window.__TAURI__) return "Desktop App";
   if (typeof navigator === "undefined") return "Unknown";
   const ua = navigator.userAgent;
   if (/edg/i.test(ua)) return "Edge";
