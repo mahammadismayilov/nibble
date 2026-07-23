@@ -1112,8 +1112,8 @@ function buildLightPacketFromUi(p) {
     return buildBreatheCapture({
       brightness: bri,
       speed: spd,
-      color,
-      useRainbow: p.light.breatheRainbow !== false && !p.light.color,
+      color: dpiColor,
+      useRainbow: false,
       allowZero: true,
     });
   }
@@ -1414,35 +1414,26 @@ function renderLight() {
   const colorInput = document.getElementById("light-color");
   const dpiCol = p.dpiStages[p.activeDpi]?.color || "#ff0000";
 
-  if (p.light.mode === "solid") {
-    // Constant mode: color from active DPI stage (cmd 0x04)
+  if (p.light.mode === "solid" || p.light.mode === "breathe") {
+    // Constant & Breathing modes: color derived from active DPI stage (cmd 0x04)
     p.light.color = dpiCol;
     if (colorInput) {
       colorInput.value = toHex(dpiCol);
       colorInput.disabled = true;
     }
     if (colorRow) colorRow.style.opacity = "0.55";
-    if (speedRow) speedRow.style.display = "none";
+    if (speedRow) speedRow.style.display = p.light.mode === "solid" ? "none" : "";
     if (note) {
+      const modeName = p.light.mode === "solid" ? "Constant" : "Breathing";
+      const extraSpeed = p.light.mode === "breathe" ? " Speed & brightness apply." : "";
       note.textContent =
-        "Constant mode has no separate color (same as official app). LED color = active DPI stage color — change it on the DPI tab.";
+        `${modeName} mode has no separate color (same as official app). LED color = active DPI stage color — change it on the DPI tab.${extraSpeed}`;
     }
   } else if (p.light.mode === "off") {
     if (colorInput) colorInput.disabled = true;
     if (colorRow) colorRow.style.opacity = "0.4";
     if (speedRow) speedRow.style.display = "none";
     if (note) note.textContent = "Lighting off.";
-  } else if (p.light.mode === "breathe") {
-    if (colorInput) {
-      colorInput.disabled = false;
-      colorInput.value = toHex(p.light.color || dpiCol);
-    }
-    if (colorRow) colorRow.style.opacity = "1";
-    if (speedRow) speedRow.style.display = "";
-    if (note) {
-      note.textContent =
-        "Breathing · optional single color, or leave default. Speed & brightness apply.";
-    }
   } else {
     if (colorInput) {
       colorInput.disabled = false;
