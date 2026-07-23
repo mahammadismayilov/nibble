@@ -9,6 +9,7 @@ import { pingActiveSession } from "./telemetry.js";
 import { migrateLegacyStorage, initTheme } from "./src/theme.js";
 import { setStatus } from "./src/state.js";
 import { connectHid } from "./src/writer.js";
+import { APP_VERSION } from "./src/constants.js";
 import {
   initTabs,
   initDeviceSelect,
@@ -28,6 +29,11 @@ function init() {
     const badge = document.querySelector(".title-block .badge");
     if (badge) badge.textContent = "Desktop";
   }
+
+  const softVer = document.getElementById("soft-version");
+  if (softVer) softVer.textContent = `v${APP_VERSION}`;
+  const aboutVer = document.getElementById("about-version");
+  if (aboutVer) aboutVer.textContent = APP_VERSION;
 
   try {
     initTabs();
