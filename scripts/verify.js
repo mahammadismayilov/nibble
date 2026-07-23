@@ -424,6 +424,24 @@ try {
     }
   }
 
+  // Test Battery-Sync RGB Mode
+  const { evaluateBatteryRgbSync, buildLightPacketFromUi } = await import(`file:///${path.resolve(appRoot, "src/writer.js").replace(/\\/g, "/")}`);
+  profile().settings.batteryRgbSync = true;
+  state.battery = 80;
+  evaluateBatteryRgbSync(true);
+  if (profile().light.color !== "#00ff00") {
+    logFail(`evaluateBatteryRgbSync failed for 80% battery: got "${profile().light.color}", expected "#00ff00"`);
+  } else {
+    logPass("evaluateBatteryRgbSync correctly assigned #00ff00 (Green) for 80% battery");
+  }
+
+  const lightBuf = buildLightPacketFromUi(profile());
+  if (!lightBuf || lightBuf.length < 32) {
+    logFail("buildLightPacketFromUi returned invalid buffer during Battery-Sync RGB mode");
+  } else {
+    logPass("buildLightPacketFromUi successfully generated HID packet during Battery-Sync RGB mode");
+  }
+
 } catch (err) {
   logFail(`JSDOM UI Stress Test Exception: ${err.stack || err.message}`);
 }

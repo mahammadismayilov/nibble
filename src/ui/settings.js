@@ -1,7 +1,7 @@
 import { saveState, profile } from "../state.js";
 import { defaultProfile } from "../constants.js";
 import { getTheme } from "../theme.js";
-import { queueDeviceWrite } from "../writer.js";
+import { queueDeviceWrite, evaluateBatteryRgbSync } from "../writer.js";
 import { renderHome } from "./home.js";
 import { renderConnection } from "./navigation.js";
 
@@ -90,7 +90,15 @@ export function bindSettingsEditors() {
   
   bindCheck("opt-fine-dpi", "fineDpi", null);
   bindCheck("opt-low-battery-warn", "lowBatteryWarn", null);
-  bindCheck("opt-battery-rgb-sync", "batteryRgbSync", "light");
+
+  const rgbSyncEl = document.getElementById("opt-battery-rgb-sync");
+  if (rgbSyncEl) {
+    rgbSyncEl.addEventListener("change", (e) => {
+      profile().settings.batteryRgbSync = e.target.checked;
+      saveState();
+      evaluateBatteryRgbSync(true);
+    });
+  }
 
   document.getElementById("opt-debounce")?.addEventListener("change", (e) => {
     profile().settings.debounce = Number(e.target.value) || 0;

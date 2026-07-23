@@ -67,14 +67,14 @@ export function keyFuncsInWireOrder(p, d = device()) {
 export function buildLightPacketFromUi(p) {
   const bri = uiBrightnessToWire(p.light.brightness);
   const spd = uiSpeedToWire(p.light.speed);
-  const dpiColor = p.dpiStages[p.activeDpi]?.color || p.light.color || "#ff0000";
-  const color = p.light.color || dpiColor;
+  const dpiColor = p.dpiStages[p.activeDpi]?.color || "#ff0000";
+  const activeColor = (p.settings?.batteryRgbSync && p.light.color) ? p.light.color : dpiColor;
 
   if (p.light.mode === "solid") {
     return buildSolidCapture({
       brightness: bri,
       speed: spd,
-      color: dpiColor,
+      color: activeColor,
       allowZero: true,
     });
   }
@@ -85,7 +85,7 @@ export function buildLightPacketFromUi(p) {
     return buildBreatheCapture({
       brightness: bri,
       speed: spd,
-      color: dpiColor,
+      color: activeColor,
       useRainbow: false,
       allowZero: true,
     });
@@ -93,7 +93,7 @@ export function buildLightPacketFromUi(p) {
   return buildLight(lightIdToWire(p.light.mode), {
     brightness: bri,
     speed: spd,
-    color: dpiColor,
+    color: p.settings?.batteryRgbSync && p.light.color ? p.light.color : (p.light.color || activeColor),
     off: p.light.mode === "off",
     useRainbow: false,
     allowZero: true,
@@ -237,6 +237,38 @@ export function startBatteryPoll() {
     if (_batteryReadBusy) return;
     readStatusFromDevice({ quiet: true }).catch(() => {});
   }, 2000);
+}
+
+export function evaluateBatteryRgbSync(force = false) {
+  const p = profile();
+  const pct = state.battery;
+  if (p?.settings?.batteryRgbSync) {
+    const val = typeof pct === "number" ? pct : 100;
+    let tier = "green";
+    let hex = "#00ff00";
+    if (val <= 50 && val > 25) {
+      tier = "yellow";
+      hex = "#ffff00";
+    } else if (val <= 25) {
+      tier = "red";
+      hex = "#ff0000";
+    }
+
+    if (force || state._currentBatteryRgbTier !== tier) {
+      state._currentBatteryRgbTier = tier;
+      if (p.light.mode !== "off") {
+        p.light.color = hex;
+        saveState();
+        renderLight();
+        queueDeviceWrite("light");
+      }
+    }
+  } else {
+    state._currentBatteryRgbTier = null;
+    saveState();
+    renderLight();
+    queueDeviceWrite("light");
+  }
 }
 
 export function applyBatteryFromStatus(st) {
