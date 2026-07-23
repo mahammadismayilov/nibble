@@ -241,8 +241,10 @@ export function startBatteryPoll() {
 
 export function evaluateBatteryRgbSync(force = false) {
   const p = profile();
+  if (!p) return;
   const pct = state.battery;
-  if (p?.settings?.batteryRgbSync) {
+
+  if (p.settings?.batteryRgbSync && !state.batteryCharging) {
     const val = typeof pct === "number" ? pct : 100;
     let tier = "green";
     let hex = "#00ff00";
@@ -256,18 +258,37 @@ export function evaluateBatteryRgbSync(force = false) {
 
     if (force || state._currentBatteryRgbTier !== tier) {
       state._currentBatteryRgbTier = tier;
-      if (p.light.mode !== "off") {
-        p.light.color = hex;
-        saveState();
-        renderLight();
-        queueDeviceWrite("light");
+      p.dpiStages.forEach((s) => {
+        if (!s.userColor) s.userColor = s.color || "#ffffff";
+      });
+      if (p.dpiStages[p.activeDpi]) {
+        p.dpiStages[p.activeDpi].color = hex;
       }
+      p.light.color = hex;
+      saveState();
+      renderDpi();
+      renderHome();
+      renderLight();
+      queueDeviceWrite("dpi", "light");
     }
   } else {
-    state._currentBatteryRgbTier = null;
-    saveState();
-    renderLight();
-    queueDeviceWrite("light");
+    if (state._currentBatteryRgbTier !== null || force) {
+      state._currentBatteryRgbTier = null;
+      let changed = false;
+      p.dpiStages.forEach((s) => {
+        if (s.userColor && s.color !== s.userColor) {
+          s.color = s.userColor;
+          changed = true;
+        }
+      });
+      if (changed || force) {
+        saveState();
+        renderDpi();
+        renderHome();
+        renderLight();
+        queueDeviceWrite("dpi", "light");
+      }
+    }
   }
 }
 

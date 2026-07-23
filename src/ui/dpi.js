@@ -87,7 +87,11 @@ export function bindDpiEditors() {
   document.getElementById("dpi-slider")?.addEventListener("input", (e) => apply(e.target.value));
   document.getElementById("dpi-input")?.addEventListener("change", (e) => apply(e.target.value));
   document.getElementById("dpi-color")?.addEventListener("input", (e) => {
-    profile().dpiStages[selectedDpiStage].color = e.target.value;
+    const stage = profile().dpiStages[selectedDpiStage];
+    if (stage) {
+      stage.color = e.target.value;
+      stage.userColor = e.target.value;
+    }
     saveState();
     renderDpi();
     renderHome();
