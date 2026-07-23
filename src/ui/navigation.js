@@ -127,7 +127,7 @@ export function renderConnection() {
     }
   } else {
     el.classList.add("offline");
-    text.innerHTML = "<strong>Disconnected</strong> · Connect mouse receiver via WebHID";
+    text.innerHTML = "<strong>Disconnected</strong> · Connect mouse receiver to configure";
     btnC.style.display = "";
     btnD.style.display = "none";
     const batPct = document.getElementById("battery-pct");

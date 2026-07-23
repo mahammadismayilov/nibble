@@ -57,7 +57,7 @@ function init() {
     const btn = document.getElementById("btn-connect");
     if (btn) {
       btn.disabled = true;
-      btn.title = "WebHID needs Chrome or Edge";
+      btn.title = "Requires Chrome, Edge, or Nibble Desktop";
     }
   }
 
