@@ -207,16 +207,32 @@ export class NibbleHid {
 
     for (let r = 0; r < retries; r++) {
       for (const att of attempts) {
-        // fresh waiter per attempt
+        // Fast-path: Fire-and-forget write (no ACK report expected from device)
+        if (opts.allowNoReply) {
+          try {
+            await this.device.sendReport(att.reportId, att.body);
+            this.frameMode = att.name;
+            return new Uint8Array(33);
+          } catch (e) {
+            lastErr = e;
+            this.lastError = e;
+            continue;
+          }
+        }
+
+        // Waiter path for commands requiring ACK response
+        let timer = null;
         let settled = false;
+
         const wait = new Promise((resolve, reject) => {
-          const timer = setTimeout(() => {
-            this._waiters = this._waiters.filter((w) => w.resolve !== resolve);
+          timer = setTimeout(() => {
             if (!settled) {
               settled = true;
+              this._waiters = this._waiters.filter((w) => w.timer !== timer);
               reject(new Error("HID read timeout"));
             }
           }, timeoutMs);
+
           this._waiters.push({
             resolve: (v) => {
               if (!settled) {
@@ -225,7 +241,13 @@ export class NibbleHid {
                 resolve(v);
               }
             },
-            reject,
+            reject: (err) => {
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                reject(err);
+              }
+            },
             timer,
           });
         });
@@ -235,18 +257,9 @@ export class NibbleHid {
         } catch (e) {
           lastErr = e;
           this.lastError = e;
-          // Clean up waiter properly
-          clearTimeout(timer);
-          this._waiters = this._waiters.filter((w) => w.resolve !== resolve);
+          if (timer) clearTimeout(timer);
+          this._waiters = this._waiters.filter((w) => w.timer !== timer);
           continue;
-        }
-
-        // If fire-and-forget write is requested and sendReport succeeded, return immediately
-        if (opts.allowNoReply) {
-          clearTimeout(timer);
-          this._waiters = this._waiters.filter((w) => w.resolve !== resolve);
-          this.frameMode = att.name;
-          return new Uint8Array(33);
         }
 
         try {
