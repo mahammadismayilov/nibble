@@ -404,6 +404,26 @@ try {
     logPass("Simulated change on #profile-select");
   }
 
+  // Test LOD Segmented Active Button Rendering across state representations
+  const { renderSettings } = await import(`file:///${path.resolve(appRoot, "src/ui/settings.js").replace(/\\/g, "/")}`);
+  const { state, profile } = await import(`file:///${path.resolve(appRoot, "src/state.js").replace(/\\/g, "/")}`);
+
+  for (const lodVal of ["low", "high", 1, 2]) {
+    profile().settings.lod = lodVal;
+    renderSettings();
+    const activeBtn = window.document.querySelector("#lod-options button.active");
+    if (!activeBtn) {
+      logFail(`renderSettings() failed to render an active button for lod = ${JSON.stringify(lodVal)}`);
+    } else {
+      const expected = (lodVal === "high" || lodVal === 2) ? "high" : "low";
+      if (activeBtn.dataset.value !== expected) {
+        logFail(`renderSettings() active button mismatch for lod = ${JSON.stringify(lodVal)}: got "${activeBtn.dataset.value}", expected "${expected}"`);
+      } else {
+        logPass(`renderSettings() active button correctly highlighted "${expected}" for lod = ${JSON.stringify(lodVal)}`);
+      }
+    }
+  }
+
 } catch (err) {
   logFail(`JSDOM UI Stress Test Exception: ${err.stack || err.message}`);
 }
