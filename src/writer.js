@@ -342,6 +342,30 @@ export function applyBatteryFromStatus(st) {
   state.batteryDebug = st.debug || "";
 
   const p = profile();
+  if (p?.settings?.batteryRgbSync && typeof pct === "number" && !state.batteryCharging) {
+    let tier = "green";
+    let hex = "#00ff00";
+    if (pct <= 50 && pct > 25) {
+      tier = "yellow";
+      hex = "#ffff00";
+    } else if (pct <= 25) {
+      tier = "red";
+      hex = "#ff0000";
+    }
+    
+    if (state._currentBatteryRgbTier !== tier) {
+      state._currentBatteryRgbTier = tier;
+      if (p.light.mode !== "off") {
+        p.light.color = hex;
+        saveState();
+        renderLight();
+        queueDeviceWrite("light");
+      }
+    }
+  } else if (state.batteryCharging) {
+    state._currentBatteryRgbTier = null;
+  }
+
   if (p?.settings?.lowBatteryWarn && pct <= 15 && !state.batteryCharging && !state._lowBatteryWarned) {
     state._lowBatteryWarned = true;
     p.light.mode = "breathe";
