@@ -1189,8 +1189,267 @@ code {
 }
 
 
-.dpi-layout {
-  grid-template-columns: 1.4fr 0.8fr;
+.dpi-layout-v2 {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+}
+
+/* ── G HUB Style DPI Timeline ── */
+.dpi-ghub-hero {
+  padding: 28px 36px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.dpi-ghub-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.dpi-ghub-topbar h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.dpi-head-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: 10px auto 32px auto;
+}
+
+.dpi-ghub-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--foreground);
+  margin-bottom: 10px;
+}
+
+.dpi-ghub-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--muted-foreground);
+  margin-bottom: 14px;
+}
+
+.dpi-diamond-icon {
+  font-size: 1.15rem;
+  color: #f5a623;
+  line-height: 1;
+}
+
+.dpi-ghub-instructions {
+  font-size: 0.88rem;
+  color: var(--muted-foreground);
+  line-height: 1.6;
+  max-width: 520px;
+}
+
+/* Timeline Track Component */
+.dpi-timeline-container {
+  position: relative;
+  width: 100%;
+  padding: 40px 16px 24px 16px;
+  user-select: none;
+  margin-bottom: 28px;
+}
+
+.dpi-timeline-values {
+  position: relative;
+  height: 44px;
+  width: 100%;
+}
+
+.dpi-val-node {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.dpi-val-node:hover {
+  transform: translateX(-50%) scale(1.1);
+}
+
+.dpi-val-num {
+  font-family: var(--font-sans, "Outfit", sans-serif);
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--foreground);
+  white-space: nowrap;
+  padding-bottom: 2px;
+}
+
+.dpi-val-node.active .dpi-val-num {
+  font-size: 1.35rem;
+  color: var(--node-color, #f5a623);
+}
+
+.dpi-val-node.selected .dpi-val-num {
+  border-bottom: 2px solid var(--foreground);
+}
+
+.dpi-val-node.active.selected .dpi-val-num {
+  border-bottom: 2px solid var(--node-color, #f5a623);
+}
+
+.dpi-timeline-track {
+  position: relative;
+  height: 28px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.dpi-timeline-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 2px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 2px rgba(255, 255, 255, 0.3);
+  border-radius: 1px;
+  z-index: 1;
+}
+
+:root[data-theme="light"] .dpi-timeline-line {
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: none;
+}
+
+.dpi-timeline-nodes {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 100%;
+  z-index: 2;
+}
+
+.dpi-track-node {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dpi-track-node .node-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.4);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  transition: all 0.2s ease;
+}
+
+.dpi-track-node.active .node-dot {
+  width: 15px;
+  height: 15px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  background: var(--node-color, #f5a623);
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 12px var(--node-color, #f5a623);
+}
+
+.dpi-timeline-scale {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  margin-top: 6px;
+}
+
+.scale-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: var(--font-sans, "Outfit", sans-serif);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.scale-tick::before {
+  content: "";
+  width: 1px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.45);
+  margin-bottom: 6px;
+}
+
+:root[data-theme="light"] .scale-tick::before {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* Bottom Bar: Stage Selection & Fine Tuning */
+.dpi-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: auto;
+}
+
+.dpi-fine-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.dpi-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--muted-foreground);
+}
+
+.dpi-field input[type="number"] {
+  width: 90px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.dpi-field input[type="color"] {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  background: transparent;
 }
 
 .dpi-stages {
@@ -1827,6 +2086,64 @@ input[type="color"]:hover {
 
 .about-page .card h3 {
   margin-top: 0;
+}
+
+/* ── Telemetry Privacy Card ── */
+.telemetry-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+@media (max-width: 600px) {
+  .telemetry-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.telemetry-box {
+  background: var(--surface-recessed);
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.telemetry-title {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.text-success {
+  color: var(--success, #22c55e);
+}
+
+.text-danger {
+  color: var(--danger, #ef4444);
+}
+
+.telemetry-list {
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+.telemetry-list li {
+  margin: 4px 0;
+}
+
+.telemetry-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 14px;
 }
 
 .danger-zone {

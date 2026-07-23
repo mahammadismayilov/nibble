@@ -4,6 +4,7 @@ import { getTheme } from "../theme.js";
 import { queueDeviceWrite, evaluateBatteryRgbSync, evaluateLowBatteryWarn } from "../writer.js";
 import { renderHome } from "./home.js";
 import { renderConnection } from "./navigation.js";
+import { isTelemetryOptedOut, setTelemetryOptOut } from "../../telemetry.js";
 
 export function renderSensor() {
   /* Sensor settings are rendered in renderSettings() */
@@ -43,6 +44,7 @@ export function renderSettings() {
   setCheck("opt-fine-dpi", s.fineDpi);
   setCheck("opt-low-battery-warn", s.lowBatteryWarn);
   setCheck("opt-battery-rgb-sync", s.batteryRgbSync);
+  setCheck("opt-telemetry", !isTelemetryOptedOut());
 }
 
 export function setSegmented(id, value) {
@@ -105,6 +107,13 @@ export function bindSettingsEditors() {
       profile().settings.batteryRgbSync = e.target.checked;
       saveState();
       evaluateBatteryRgbSync(true);
+    });
+  }
+
+  const teleEl = document.getElementById("opt-telemetry");
+  if (teleEl) {
+    teleEl.addEventListener("change", (e) => {
+      setTelemetryOptOut(!e.target.checked);
     });
   }
 

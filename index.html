@@ -180,28 +180,50 @@
 
       <!-- DPI -->
       <section class="panel" id="panel-dpi">
-        <div class="dpi-layout">
+        <div class="dpi-layout-v2">
+          <div class="card dpi-ghub-hero">
+            <div class="dpi-ghub-topbar">
+              <h3>DPI Sensitivity</h3>
+              <button class="btn ghost" id="btn-reset-dpi">Reset DPI</button>
+            </div>
+
+            <!-- Logitech G HUB Interactive DPI Timeline Track -->
+            <div class="dpi-timeline-container" id="dpi-timeline">
+              <div class="dpi-timeline-values" id="dpi-timeline-values"></div>
+              <div class="dpi-timeline-track" id="dpi-timeline-track">
+                <div class="dpi-timeline-line"></div>
+                <div class="dpi-timeline-nodes" id="dpi-timeline-nodes"></div>
+              </div>
+              <div class="dpi-timeline-scale" id="dpi-timeline-scale"></div>
+            </div>
+
+            <!-- Bottom Bar: Stage Selection & Fine Tuning -->
+            <div class="dpi-bottom-bar">
+              <div class="dpi-stages" id="dpi-stages"></div>
+              <div class="dpi-fine-controls">
+                <div class="dpi-field">
+                  <label for="dpi-input">DPI Value</label>
+                  <input type="number" id="dpi-input" min="50" max="26000" step="50" />
+                </div>
+                <div class="dpi-field">
+                  <label for="dpi-color">LED Color</label>
+                  <input type="color" id="dpi-color" />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-head">
               <div>
-                <h3>DPI Sensitivity</h3>
-                <p class="hint">Up to 6 stages · PAW3395 up to 26,000 DPI</p>
+                <h3>Report Rate</h3>
+                <p class="hint">How often the mouse reports position to the PC</p>
               </div>
-              <button class="btn ghost" id="btn-reset-dpi">Reset DPI</button>
             </div>
-            <div class="dpi-stages" id="dpi-stages"></div>
-            <div class="dpi-editor" id="dpi-editor">
-              <label>Stage value
-                <input type="range" id="dpi-slider" min="50" max="26000" step="50" />
-              </label>
-              <input type="number" id="dpi-input" min="50" max="26000" step="50" />
-              <label class="color-label">Stage color
-                <input type="color" id="dpi-color" />
-              </label>
-              <p class="hint">In constant light mode this is the LED color (same as official driver).</p>
-            </div>
+            <div class="rate-options" id="rate-options"></div>
           </div>
-          <div class="card">
+        </div>
+      </section>
             <div class="card-head">
               <div>
                 <h3>Report Rate</h3>
@@ -460,6 +482,45 @@
               <li>Battery &amp; charging status (best-effort; dock may hold last %)</li>
             </ul>
             <p class="hint about-copy">Macros are not implemented.</p>
+          </div>
+
+          <div class="card">
+            <h3>Privacy &amp; Telemetry Disclaimer</h3>
+            <p class="hint about-copy">
+              Nibble includes <strong>100% anonymous telemetry</strong> to help track hardware compatibility and diagnose connection errors across mouse models.
+            </p>
+            
+            <div class="telemetry-info-grid">
+              <div class="telemetry-box">
+                <strong class="telemetry-title text-success">✓ What is collected (Anonymous)</strong>
+                <ul class="telemetry-list">
+                  <li>Operating system (Windows, macOS, Linux)</li>
+                  <li>Mouse Vendor ID &amp; Product ID (e.g. <code>0x249A:0x5C2F</code>)</li>
+                  <li>Anonymous error reports if a USB transfer fails</li>
+                </ul>
+              </div>
+
+              <div class="telemetry-box">
+                <strong class="telemetry-title text-danger">✗ What is NEVER collected</strong>
+                <ul class="telemetry-list">
+                  <li>0 IP logging (IP addresses are discarded)</li>
+                  <li>No personal information or account data</li>
+                  <li>No keylogging, macros, or button press history</li>
+                  <li>No tracking cookies or fingerprinting</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="telemetry-toggle-row">
+              <div>
+                <strong>Anonymous Telemetry</strong>
+                <p class="hint">Help improve mouse compatibility and connection stability</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="opt-telemetry" checked />
+                <span></span>
+              </label>
+            </div>
           </div>
 
           <div class="card">
