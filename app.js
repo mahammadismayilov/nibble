@@ -7,9 +7,9 @@ import { webHidSupported } from "./hid.js";
 import { hid } from "./src/hidInstance.js";
 import { pingActiveSession } from "./telemetry.js";
 import { migrateLegacyStorage, initTheme } from "./src/theme.js";
-import { setStatus } from "./src/state.js";
+import { setStatus, state } from "./src/state.js";
+import { DEVICES, APP_VERSION } from "./src/constants.js";
 import { connectHid } from "./src/writer.js";
-import { APP_VERSION } from "./src/constants.js";
 import {
   initTabs,
   initDeviceSelect,

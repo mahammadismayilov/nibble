@@ -1,4 +1,4 @@
-import { saveState, profile } from "../state.js";
+import { saveState, profile, state } from "../state.js";
 import { defaultProfile } from "../constants.js";
 import { getTheme } from "../theme.js";
 import { queueDeviceWrite, evaluateBatteryRgbSync, evaluateLowBatteryWarn } from "../writer.js";
