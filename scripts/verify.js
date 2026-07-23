@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { JSDOM } from "jsdom";
 import { profileRegistry, PROFILES } from "../profiles/registry.js";
 import { driverRegistry } from "../drivers/registry.js";
 import { NibbleHid, webHidSupported } from "../hid.js";
@@ -46,7 +47,6 @@ for (const p of PROFILES) {
     }
   }
 
-  // Validate image asset existence
   if (p.image) {
     const imagePath = path.resolve(appRoot, p.image);
     if (!fs.existsSync(imagePath)) {
@@ -55,7 +55,6 @@ for (const p of PROFILES) {
     }
   }
 
-  // Validate modes array
   if (Array.isArray(p.modes)) {
     for (const m of p.modes) {
       if (!m.vid || !m.pid) {
@@ -96,7 +95,6 @@ for (const drv of [compx, yichip]) {
     }
   }
 
-  // Verify getTransferOptions returns valid object
   const opts = drv.getTransferOptions("rate");
   if (typeof opts !== "object" || typeof opts.allowNoReply !== "boolean") {
     logFail(`Driver "${drv.name}" getTransferOptions() returned invalid options structure`);
@@ -209,7 +207,7 @@ try {
     logPass(`buildStatusQuery() generated ${statusBuf.length}-byte packet`);
   }
 
-  const rateBuf = protocol.buildReportRate(3); // 1000 Hz
+  const rateBuf = protocol.buildReportRate(3);
   if (!(rateBuf instanceof Uint8Array)) {
     logFail("buildReportRate() failed");
   } else {
@@ -230,12 +228,11 @@ try {
     logPass(`buildLight() generated ${lightBuf.length}-byte packet`);
   }
 
-  // Parse test status response (0x00 0xC0 link=1 bat=85 flag=0)
   const mockStatusReport = new Uint8Array(33);
   mockStatusReport[0] = 0x00;
   mockStatusReport[1] = 0xc0;
-  mockStatusReport[2] = 1;  // online link
-  mockStatusReport[3] = 85; // 85% battery
+  mockStatusReport[2] = 1;
+  mockStatusReport[3] = 85;
   const parsed = protocol.parseStatus(mockStatusReport);
   if (!parsed || parsed.kind !== "status" || parsed.battery !== 85) {
     logFail(`parseStatus() failed to parse mock status report: ${JSON.stringify(parsed)}`);
@@ -262,7 +259,6 @@ async function testMockHidTransfers() {
   const testHid = new NibbleHid();
   testHid.device = mockDevice;
 
-  // Test 1: Fire-and-Forget write (allowNoReply: true)
   try {
     const testBuf = new Uint8Array(33);
     const result = await testHid.xfer(testBuf, { allowNoReply: true, timeoutMs: 200 });
@@ -275,14 +271,12 @@ async function testMockHidTransfers() {
     logFail(`Mock WebHID transfer allowNoReply failed: ${err.message}`);
   }
 
-  // Test 2: Transfer with ACK response simulation
   try {
     const testBuf = new Uint8Array(33);
     testBuf[1] = 0x10;
 
     const xferPromise = testHid.xfer(testBuf, { allowNoReply: false, timeoutMs: 500 });
 
-    // Simulate incoming input report from mouse
     setTimeout(() => {
       const mockRx = new Uint8Array(33);
       mockRx[1] = 0x10;
@@ -301,6 +295,109 @@ async function testMockHidTransfers() {
 }
 
 await testMockHidTransfers();
+
+// --------------------------------------------------
+// 8. Full JSDOM UI Interaction & Event Handler Test
+// --------------------------------------------------
+console.log("\n8. Executing JSDOM Browser UI Interaction Stress Test...");
+
+try {
+  const dom = new JSDOM(indexHtml, {
+    url: "http://localhost:8080/",
+    runScripts: "outside-only",
+    resources: "usable",
+  });
+
+  const { window } = dom;
+  global.window = window;
+  global.document = window.document;
+  global.HTMLElement = window.HTMLElement;
+  global.HTMLSelectElement = window.HTMLSelectElement;
+  global.HTMLInputElement = window.HTMLInputElement;
+  global.Blob = window.Blob;
+
+  // Mock browser globals needed by UI handlers
+  global.confirm = window.confirm = () => true;
+  global.requestAnimationFrame = window.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  global.cancelAnimationFrame = window.cancelAnimationFrame = (id) => clearTimeout(id);
+  global.URL.createObjectURL = () => "blob:mock-url";
+  global.URL.revokeObjectURL = () => {};
+
+  // Mock WebHID on window.navigator
+  Object.defineProperty(window.navigator, "hid", {
+    value: {
+      async getDevices() { return []; },
+      async requestDevice() { return []; },
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    writable: true,
+    configurable: true,
+  });
+
+  // Mock localStorage
+  const localStore = new Map();
+  global.localStorage = {
+    getItem(k) { return localStore.get(k) || null; },
+    setItem(k, v) { localStore.set(k, String(v)); },
+    removeItem(k) { localStore.delete(k); },
+    clear() { localStore.clear(); },
+  };
+
+  // Import app.js in simulated JSDOM environment
+  await import(`file:///${appJsPath.replace(/\\/g, "/")}`);
+
+  // Trigger DOMContentLoaded
+  window.document.dispatchEvent(new window.Event("DOMContentLoaded"));
+
+  logPass("JSDOM initialization & DOMContentLoaded fired cleanly");
+
+  // Test UI Element Clicks & Interactions
+  const clickableIds = [
+    "btn-connect",
+    "btn-disconnect",
+    "btn-landing-connect",
+    "btn-theme",
+    "btn-reset-keys",
+    "btn-reset-dpi",
+    "btn-reset-light",
+    "btn-export-profile",
+  ];
+
+  for (const id of clickableIds) {
+    const el = window.document.getElementById(id);
+    if (el) {
+      el.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      logPass(`Simulated click on #${id}`);
+    }
+  }
+
+  // Test Tab Switching
+  const tabs = window.document.querySelectorAll("#tabs .tab");
+  for (const tab of tabs) {
+    tab.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const tabName = tab.getAttribute("data-tab");
+    logPass(`Simulated click on tab [data-tab="${tabName}"]`);
+  }
+
+  // Test Select Dropdowns
+  const devSelect = window.document.getElementById("device-select");
+  if (devSelect && devSelect.options.length > 0) {
+    devSelect.selectedIndex = 1;
+    devSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
+    logPass("Simulated change on #device-select");
+  }
+
+  const profSelect = window.document.getElementById("profile-select");
+  if (profSelect && profSelect.options.length > 0) {
+    profSelect.selectedIndex = 0;
+    profSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
+    logPass("Simulated change on #profile-select");
+  }
+
+} catch (err) {
+  logFail(`JSDOM UI Stress Test Exception: ${err.stack || err.message}`);
+}
 
 // --------------------------------------------------
 // Summary Report

@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node scripts/verify.js"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }
