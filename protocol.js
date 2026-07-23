@@ -843,10 +843,8 @@ export function buildSensorGet() {
 
 export function parseSensorResponse(buf) {
   if (!buf || buf.length < 8) return null;
-  // Usually the GET returns the same format as SET body starting at index 5 or so.
-  // We'll inspect buf[5], buf[6], buf[7] assuming it echoes the SET command.
   return {
-    lod: buf[5],
+    lod: buf[5] === 2 ? "high" : "low",
     angleSnap: buf[6] === 1,
     ripple: buf[7] === 1,
     raw: Array.from(buf.slice(0, 16)),

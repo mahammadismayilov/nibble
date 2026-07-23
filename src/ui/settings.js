@@ -13,7 +13,8 @@ export function renderSettings() {
   const p = profile();
   if (!p.settings) p.settings = defaultProfile(p.deviceId || state.deviceId).settings;
   const s = p.settings;
-  setSegmented("lod-options", s.lod);
+  const lodValue = s.lod === "high" || s.lod === 2 || s.lod === "2" ? "high" : "low";
+  setSegmented("lod-options", lodValue);
   setSegmented("mode-options", s.mode);
   setSegmented("theme-options", getTheme());
   const setCheck = (id, val) => {
