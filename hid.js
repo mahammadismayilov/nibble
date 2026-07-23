@@ -36,13 +36,17 @@ export class NibbleHid {
     this.frameMode = null;
     this.lastTx = null;
     this.lastRx = null;
+    this.isNativeTauri = false;
+    this._nativeInfo = null;
   }
 
   get connected() {
+    if (this.isNativeTauri) return true;
     return !!(this.device && this.device.opened);
   }
 
   get info() {
+    if (this.isNativeTauri) return this._nativeInfo;
     if (!this.device) return null;
     return {
       productName: this.device.productName,
@@ -57,15 +61,69 @@ export class NibbleHid {
   }
 
   async requestAndOpen() {
-    if (!webHidSupported()) {
-      throw new Error("WebHID not supported — use Chrome/Edge on http://localhost");
+    // 0. Desktop Tauri Native HID Bypass (Zero Browser Dialog Popups!)
+    const isDesktop = typeof window !== "undefined" && !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
+    if (isDesktop && window.__TAURI__ && window.__TAURI__.core) {
+      try {
+        const nativeDevs = await window.__TAURI__.core.invoke("list_hid_devices");
+        if (nativeDevs && nativeDevs.length > 0) {
+          const target =
+            nativeDevs.find(
+              (d) => (d.usage_page === 1 && d.usage === 0) || d.usage_page >= 0xff00
+            ) || nativeDevs[0];
+          await window.__TAURI__.core.invoke("open_hid_device", { path: target.path });
+          this.isNativeTauri = true;
+          this.frameMode = "strip1";
+          this._nativeInfo = {
+            productName: target.product_name,
+            vendorId: target.vendor_id,
+            productId: target.product_id,
+            reports: [],
+            frameMode: "strip1",
+            isConfigInterface: true,
+            score: 50,
+            hasListedOutputs: true,
+          };
+          return this.info;
+        }
+      } catch (e) {
+        console.warn("Native Tauri HID check failed, falling back to WebHID:", e);
+      }
     }
 
-    const picked = await navigator.hid.requestDevice({ filters: deviceFilters() });
-    if (!picked.length) throw new Error("No device selected");
+    if (!webHidSupported()) {
+      throw new Error("WebHID not supported — use Chrome/Edge or Nibble Desktop");
+    }
+
+    // 1. Try connecting directly via already granted/paired devices (no browser popup!)
+    try {
+      const granted = await navigator.hid.getDevices();
+      const pool = uniqueDevices((granted || []).filter(isSupportedVidPid));
+      if (pool.length > 0) {
+        const config = pickConfigDevice(pool);
+        if (config) {
+          await this.openDevice(config);
+          return this.info;
+        }
+      }
+    } catch (e) {
+      console.warn("getDevices check failed:", e);
+    }
+
+    // 2. If no granted device is connected yet, call requestDevice (browser picker)
+    let picked = [];
+    try {
+      picked = await navigator.hid.requestDevice({ filters: deviceFilters() });
+    } catch (err) {
+      console.warn("navigator.hid.requestDevice skipped or unsupported in WebView:", err);
+    }
 
     const granted = await navigator.hid.getDevices();
-    const pool = uniqueDevices([...picked, ...granted].filter(isSupportedVidPid));
+    const pool = uniqueDevices([...(picked || []), ...(granted || [])].filter(isSupportedVidPid));
+
+    if (!pool.length && (!picked || !picked.length)) {
+      throw new Error("No supported mouse device selected or found. Make sure your mouse is plugged in.");
+    }
 
     const config = pickConfigDevice(pool);
     if (!config) {
@@ -104,12 +162,38 @@ export class NibbleHid {
   }
 
   async getGrantedConfigDevices() {
+    // Native Tauri path: return devices from Rust hidapi
+    if (typeof window !== "undefined" && window.__TAURI__ && window.__TAURI__.core) {
+      try {
+        const nativeDevs = await window.__TAURI__.core.invoke("list_hid_devices");
+        if (nativeDevs && nativeDevs.length > 0) {
+          // Group by vendorId+productId+productName (one config per physical device)
+          const groups = new Map();
+          for (const d of nativeDevs) {
+            const key = `${d.vendor_id}-${d.product_id}-${d.product_name}`;
+            if (!groups.has(key)) groups.set(key, d);
+          }
+          return Array.from(groups.values()).map((d) => ({
+            // Shim to match WebHID device shape expected by landing screen
+            productName: d.product_name,
+            vendorId: d.vendor_id,
+            productId: d.product_id,
+            _nativePath: d.path,
+            _nativeUsagePage: d.usage_page,
+            _nativeUsage: d.usage,
+            collections: [],
+            opened: false,
+            open: async () => {},
+            close: async () => {},
+          }));
+        }
+      } catch (e) {
+        console.warn("Native Tauri getGrantedConfigDevices failed:", e);
+      }
+    }
+
     if (!webHidSupported()) return [];
     const list = (await navigator.hid.getDevices()).filter(isSupportedVidPid);
-    // Group by some unique identifier to avoid returning multiple interfaces for the same dongle
-    // if pickConfigDevice only picked one, but if they have multiple mice, we want to return
-    // one config interface PER physical device.
-    // For now, let's group by productName + vendorId + productId
     const groups = new Map();
     for (const d of list) {
       const key = `${d.vendorId}-${d.productId}-${d.productName}`;
@@ -149,6 +233,20 @@ export class NibbleHid {
   }
 
   async close() {
+    // Native Tauri HID close
+    if (this.isNativeTauri) {
+      try {
+        if (window.__TAURI__ && window.__TAURI__.core) {
+          await window.__TAURI__.core.invoke("close_hid_device");
+        }
+      } catch (_) {}
+      this.isNativeTauri = false;
+      this._nativeInfo = null;
+      this.frameMode = null;
+      return;
+    }
+
+    // WebHID close
     if (this.device) {
       try {
         this.device.removeEventListener("inputreport", this._handleInput);
@@ -184,6 +282,81 @@ export class NibbleHid {
       packet[0x20] = checksum33(packet);
     }
     this.lastTx = packet;
+
+    // ── Native Tauri HID path (Rust hidapi backend) ──
+    if (this.isNativeTauri && window.__TAURI__ && window.__TAURI__.core) {
+      const invoke = window.__TAURI__.core.invoke;
+      const data32 = Array.from(packet.slice(1)); // strip leading 0x00, send 32 bytes
+      const cmd = packet[1]; // the command byte we sent
+
+      for (let r = 0; r < retries; r++) {
+        try {
+          await invoke("send_hid_report", { reportId: 0, data: data32 });
+        } catch (e) {
+          this.lastError = e;
+          continue;
+        }
+
+        if (opts.allowNoReply) {
+          return new Uint8Array(33);
+        }
+
+        // Read loop: drain unsolicited status reports, wait for actual command ACK
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const remaining = Math.max(50, deadline - Date.now());
+          try {
+            const rxArr = await invoke("read_hid_report", { timeoutMs: remaining });
+            const rxRaw = new Uint8Array(rxArr);
+            if (rxRaw.length === 0) continue; // timeout, no data
+
+            // Normalize to 33-byte form
+            const rx = new Uint8Array(33);
+            if (rxRaw.length >= 33) {
+              rx.set(rxRaw.subarray(0, 33));
+            } else if (rxRaw.length === 32) {
+              rx.set(rxRaw, 1); // prepend 0x00 report ID
+            } else {
+              rx.set(rxRaw, 1);
+            }
+            this.lastRx = rx;
+
+            // Always notify onReport handler for status (0xC0) or DPI switch (0xC2) reports
+            const rxCmd = rx[0] === 0x00 ? rx[1] : rx[0];
+            if (this._onReport && (rxCmd === 0xC0 || rxCmd === 0xC2)) {
+              this._onReport(rx, rxCmd);
+            }
+
+            // Accept exact-mode responses or plausible ACKs (0xC0 is the expected ACK for status query!)
+            if (exact || isPlausibleAck(rx, packet)) {
+              return rx;
+            }
+
+            // Accept if the response command matches what we sent
+            if (rxCmd === cmd) {
+              return rx;
+            }
+
+            // Unsolicited status/button reports while waiting for a non-status command: continue reading
+            if (rxCmd === 0xC0 || rxCmd === 0xC2) {
+              continue;
+            }
+
+            // Accept any non-trivial response
+            if (rx.some((b) => b !== 0)) {
+              return rx;
+            }
+          } catch (e) {
+            this.lastError = e;
+            if (exact) return new Uint8Array(33);
+            break;
+          }
+        }
+      }
+      // Last resort for fire-and-forget
+      if (exact || opts.allowNoReply) return new Uint8Array(33);
+      throw new Error("No response from mouse (native HID)");
+    }
 
     // Capture-proven path: strip1 only (32-byte HID data like Wireshark "HID Data")
     // full33 as fallback if strip1 throws

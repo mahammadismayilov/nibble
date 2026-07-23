@@ -16,15 +16,28 @@ export function renderHome() {
     if (el) el.textContent = t;
   };
 
-  const mouseImg = document.getElementById("mouse-image");
-  if (mouseImg) mouseImg.src = d.image;
-  const keysImg = document.getElementById("keys-mouse-image");
-  if (keysImg) keysImg.src = d.image;
-  const lightImg = document.getElementById("light-mouse-image");
-  if (lightImg) lightImg.src = d.image;
+  const formatImgSrc = (src) => {
+    if (!src) return "assets/device/mouse_aj179.png";
+    return src.replace(/^\/+/, "");
+  };
 
+  const mouseImg = document.getElementById("home-mouse-img") || document.getElementById("mouse-image");
+  if (mouseImg) mouseImg.src = formatImgSrc(d.image);
+  const keysImg = document.getElementById("keys-mouse-img") || document.getElementById("keys-mouse-image");
+  if (keysImg) keysImg.src = formatImgSrc(d.image);
+  const lightImg = document.getElementById("light-mouse-image");
+  if (lightImg) lightImg.src = formatImgSrc(d.image);
+
+  const subText = hid.connected
+    ? `Connected · ${d.sensor ? d.sensor + " sensor" : "Gaming mouse"}`
+    : d.sensor
+      ? `${d.sensor} sensor`
+      : "Gaming mouse";
+
+  setTxt("home-dev-name", d.name);
   setTxt("home-device-name", d.name);
-  setTxt("home-device-sub", d.sensor ? `${d.sensor} sensor` : "Gaming mouse");
+  setTxt("home-dev-sub", subText);
+  setTxt("home-device-sub", subText);
 
   setTxt("stat-dpi", String(dpi.value));
   setTxt("stat-dpi-color", `Stage ${p.activeDpi + 1}`);
@@ -55,19 +68,28 @@ export function renderHome() {
   if (batTile) batTile.classList.toggle("is-charging", !!state.batteryCharging);
   if (hid.connected && typeof bat === "number" && bat >= 0) {
     const held = !!(state.batteryIsLast || state.batteryOnline === false);
-    setTxt("stat-battery", `${Math.min(100, bat)}%${held ? " (last)" : ""}`);
+    const chgPrefix = state.batteryCharging ? "⚡ " : "";
+    setTxt("stat-battery", `${chgPrefix}${Math.min(100, bat)}%${held ? " (last)" : ""}`);
     let sub = "Discharging";
     if (state.batteryOnline === false) sub = "Sleeping";
     else if (state.batteryCharging) sub = "Charging";
     else if (bat <= 20) sub = "Low";
     setTxt("stat-battery-sub", sub);
   } else {
-    setTxt("stat-battery", "—");
     let sub = "Connect to read";
     if (hid.connected) {
-      if (state.batteryCharging) sub = "Charging";
-      else if (state.batteryOnline === false) sub = "Sleeping";
-      else sub = "Unavailable";
+      if (state.batteryCharging) {
+        setTxt("stat-battery", "⚡ Charging");
+        sub = "Charging";
+      } else if (state.batteryOnline === false) {
+        setTxt("stat-battery", "Sleeping");
+        sub = "Sleeping";
+      } else {
+        setTxt("stat-battery", "—");
+        sub = "Unavailable";
+      }
+    } else {
+      setTxt("stat-battery", "—");
     }
     setTxt("stat-battery-sub", sub);
   }

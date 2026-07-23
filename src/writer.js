@@ -359,6 +359,7 @@ export function applyBatteryFromStatus(st) {
     state.batteryDebug = st.debug || "";
     state._lastDockFullAt = 0;
     renderConnection();
+    renderHome();
     return true;
   }
 
@@ -374,6 +375,7 @@ export function applyBatteryFromStatus(st) {
     state.batterySource = state.battery != null ? "dock-last" : "dock-wait";
     state.batteryDebug = st.debug || "dock";
     renderConnection();
+    renderHome();
     return true;
   }
 
@@ -388,6 +390,7 @@ export function applyBatteryFromStatus(st) {
       state._lastDockFullAt = now;
     }
     renderConnection();
+    renderHome();
     return false;
   }
 
@@ -405,6 +408,7 @@ export function applyBatteryFromStatus(st) {
       state.batterySource = "dock-hold";
       state.batteryDebug = `hold ${state.battery} vs get ${pct}`;
       renderConnection();
+    renderHome();
       return true;
     }
     return false;
@@ -421,6 +425,7 @@ export function applyBatteryFromStatus(st) {
     state.batterySource = state.battery != null ? "charge-hold" : "charge-wait";
     state.batteryDebug = st.debug || "hold last (no 100% while charging)";
     renderConnection();
+    renderHome();
     return true;
   }
 
@@ -443,6 +448,7 @@ export function applyBatteryFromStatus(st) {
   evaluateLowBatteryWarn();
 
   renderConnection();
+  renderHome();
   return true;
 }
 
@@ -648,10 +654,10 @@ export async function syncProfileFromDevice() {
 
   try {
     const raw = await xferGet(buildReportRateGet());
-    const rateIdx = parseReportRateResponse(raw);
-    if (rateIdx != null && rateIdx >= 0) {
-      p.reportRateIndex = rateIdx;
-      log.push(`Rate: ${device().reportRates[rateIdx] || rateIdx}Hz`);
+    const rateResult = parseReportRateResponse(raw);
+    if (rateResult && typeof rateResult.rateIndex === "number" && rateResult.rateIndex >= 0) {
+      p.reportRateIndex = rateResult.rateIndex;
+      log.push(`Rate: ${device().reportRates[rateResult.rateIndex] || rateResult.rateIndex}Hz`);
     }
   } catch {
     /* optional */
@@ -662,6 +668,14 @@ export async function syncProfileFromDevice() {
     const raw = await xferGet(buildDpiGet());
     const dpiInfo = parseDpiResponse(raw);
     if (dpiInfo) {
+      // Apply actual DPI values read from the device hardware
+      if (dpiInfo.stages && dpiInfo.stages.length > 0) {
+        for (let i = 0; i < dpiInfo.stages.length && i < p.dpiStages.length; i++) {
+          if (dpiInfo.stages[i].value > 0) {
+            p.dpiStages[i].value = dpiInfo.stages[i].value;
+          }
+        }
+      }
       if (typeof dpiInfo.activeIndex === "number" && dpiInfo.activeIndex < p.dpiStages.length) {
         p.activeDpi = dpiInfo.activeIndex;
         setSelectedDpiStage(dpiInfo.activeIndex);
@@ -675,11 +689,16 @@ export async function syncProfileFromDevice() {
 
   try {
     const raw = await xferGet(buildKeyMapGet());
-    const keys = parseKeyMapResponse(raw);
-    if (keys && Object.keys(keys).length > 0) {
-      const vals = Object.values(keys);
-      if (!(vals.length > 0 && vals.every((v) => v === "disable"))) {
-        p.keys = { ...p.keys, ...keys };
+    const funcs = parseKeyMapResponse(raw);
+    if (Array.isArray(funcs) && funcs.length === 6) {
+      if (!funcs.every((v) => v === "disable")) {
+        const devKeys = device().keys;
+        devKeys.forEach((k) => {
+          if (typeof k.keyValue === "number" && k.keyValue >= 0 && k.keyValue < 6) {
+            const f = funcs[k.keyValue];
+            if (f) p.keys[k.id] = f;
+          }
+        });
         log.push("Keys synced");
       }
     }

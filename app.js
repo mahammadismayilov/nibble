@@ -23,6 +23,12 @@ import { bindActions } from "./src/profileManager.js";
 migrateLegacyStorage();
 
 function init() {
+  const isDesktop = typeof window !== "undefined" && !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
+  if (isDesktop) {
+    const badge = document.querySelector(".title-block .badge");
+    if (badge) badge.textContent = "Desktop";
+  }
+
   try {
     initTabs();
   } catch (e) {
@@ -56,20 +62,38 @@ function init() {
   }
 
   async function startupCheck() {
+    const main = document.getElementById("main-app");
+    const landing = document.getElementById("landing-screen");
+
+    // Desktop Tauri: auto-connect via native Rust HID (no WebHID needed)
+    if (isDesktop && window.__TAURI__ && window.__TAURI__.core) {
+      try {
+        if (main) main.style.display = "";
+        if (landing) landing.style.display = "none";
+        await connectHid(false); // requestAndOpen() handles native HID internally
+      } catch (e) {
+        console.error("Desktop auto-connect failed:", e);
+        if (main) main.style.display = "";
+        if (landing) landing.style.display = "none";
+      }
+      return;
+    }
+
+    // Web: requires WebHID support
     if (!webHidSupported()) return;
     try {
       const devices = await hid.getGrantedConfigDevices();
-      if (devices.length === 1) {
+
+      if (devices.length >= 1) {
         try {
-          document.getElementById("main-app").style.display = "";
+          if (main) main.style.display = "";
+          if (landing) landing.style.display = "none";
           await hid.openDevice(devices[0]);
           await connectHid(true);
         } catch (e) {
           console.error(e);
           showLandingScreen(devices);
         }
-      } else if (devices.length > 1) {
-        showLandingScreen(devices);
       } else {
         showLandingScreen([]);
       }

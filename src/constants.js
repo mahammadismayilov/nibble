@@ -1,7 +1,7 @@
 import { profileRegistry } from "../profiles/registry.js";
 
 export const APP_NAME = "Nibble";
-export const APP_VERSION = "1.0.3";
+export const APP_VERSION = "1.0.4";
 export const STORAGE_KEY = "nibble-web-v1";
 export const THEME_KEY = "nibble-theme";
 export const LEGACY_STORAGE_KEY = "ajazz-driver-web-v1";

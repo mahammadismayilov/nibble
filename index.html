@@ -41,13 +41,12 @@
   </div>
   <div class="app" id="main-app" style="display: none;">
     <!-- Top chrome -->
-    <div class="top-chrome">
-      <header class="titlebar">
-        <div class="titlebar-left">
-          <img class="brand-logo" src="assets/nibble.svg" width="28" height="28" alt="" />
-          <div class="title-block">
+    <div class="top-chrome" data-tauri-drag-region>
+      <header class="titlebar" data-tauri-drag-region>
+        <div class="titlebar-left" data-tauri-drag-region>
+          <div class="title-block" data-tauri-drag-region>
             <h1>Nibble <span class="badge">Web</span></h1>
-            <span class="version" id="soft-version">v1.0.3</span>
+            <span class="version" id="soft-version">v1.0.4</span>
           </div>
         </div>
         <div class="titlebar-center">
@@ -403,7 +402,7 @@
             <div class="field">
               <div>
                 <label>Battery-Sync RGB Mode</label>
-                <p class="hint">Changes LED color based on battery (Green > 50, Yellow > 25, Red < 25)</p>
+                <p class="hint">Changes LED color based on battery (Green &gt; 50, Yellow &gt; 25, Red &lt; 25)</p>
               </div>
               <label class="switch"><input type="checkbox" id="opt-battery-rgb-sync" /><span></span></label>
             </div>

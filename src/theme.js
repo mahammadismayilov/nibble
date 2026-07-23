@@ -27,6 +27,14 @@ export function setTheme(theme) {
   } catch {
     /* ignore */
   }
+
+  try {
+    if (typeof window !== "undefined" && window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke("set_window_theme", { theme: next });
+    }
+  } catch {
+    /* ignore */
+  }
   const btn = document.getElementById("btn-theme");
   if (btn) {
     btn.title = next === "light" ? "Switch to dark theme" : "Switch to light theme";

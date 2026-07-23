@@ -156,6 +156,16 @@
 html,
 body {
   height: 100%;
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0px !important;
+  height: 0px !important;
+  display: none !important;
 }
 
 body {
@@ -168,7 +178,6 @@ body {
   line-height: var(--leading-body);
   color: var(--foreground);
   background: var(--surface-default);
-  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -256,9 +265,9 @@ p,
 
 /* Title bar — flat, no raised surface */
 .titlebar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   padding: 8px 2px 10px;
   background: transparent;
@@ -267,24 +276,27 @@ p,
   box-shadow: none;
 }
 
-.titlebar-left,
-.titlebar-right {
+.titlebar-left {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 0;
-}
-
-.titlebar-right {
-  justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .titlebar-center {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
+  gap: 10px;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .logo {
@@ -521,6 +533,10 @@ input[type="number"]:focus-visible {
   color: var(--success);
   font-weight: 500;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+  flex-shrink: 1;
 }
 
 .connection .dot {
@@ -682,8 +698,30 @@ input[type="number"]:focus-visible {
 
 .content {
   min-height: 0;
-  overflow: auto;
-  padding-right: 2px;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--subtle-foreground) transparent;
+}
+
+.content::-webkit-scrollbar {
+  width: 8px !important;
+}
+
+.content::-webkit-scrollbar-track {
+  background: var(--surface-recessed) !important;
+  border-radius: 8px !important;
+}
+
+.content::-webkit-scrollbar-thumb {
+  background: var(--subtle-foreground) !important;
+  border-radius: 8px !important;
+  border: 2px solid var(--surface-default) !important;
+}
+
+.content::-webkit-scrollbar-thumb:hover {
+  background: var(--primary) !important;
 }
 
 .panel {
@@ -1974,7 +2012,7 @@ input[type="color"]:hover {
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 
-@media (max-width: 1100px) {
+@media (max-width: 768px) {
   body {
     overflow: auto;
   }
