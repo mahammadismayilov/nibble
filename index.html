@@ -30,13 +30,28 @@
   <div class="bg-layer"></div>
   <div class="landing-screen" id="landing-screen">
     <div class="landing-content">
-      <img src="assets/nibble.svg" alt="Nibble" class="landing-logo" width="64" height="64" />
-      <h1 class="landing-title">Select your mouse</h1>
-      <p class="landing-subtitle">Connect or choose a device to configure</p>
+      <div class="landing-hero">
+        <img src="assets/nibble.svg" alt="Nibble" class="landing-logo" width="72" height="72" />
+        <div class="landing-platform-badge" id="landing-platform-badge">
+          <span class="dot"></span> <span id="platform-badge-text">Web Companion</span>
+        </div>
+        <h1 class="landing-title">Nibble Mouse Configurator</h1>
+        <p class="landing-subtitle">
+          Open-source hardware companion for wireless gaming mice.<br />
+          Connect your USB receiver or select a device profile to get started.
+        </p>
+      </div>
+
       <div class="landing-grid" id="landing-grid">
         <!-- Injected via JS -->
       </div>
-      <button class="btn primary btn-large" id="btn-landing-connect">Connect new mouse</button>
+
+      <div class="landing-actions">
+        <button class="btn primary btn-large" id="btn-landing-connect">
+          Connect Mouse Receiver
+        </button>
+        <span class="landing-hint">No installer required · 100% Portable &amp; Private</span>
+      </div>
     </div>
   </div>
   <div class="app" id="main-app" style="display: none;">
@@ -45,7 +60,7 @@
       <header class="titlebar" data-tauri-drag-region>
         <div class="titlebar-left" data-tauri-drag-region>
           <div class="title-block" data-tauri-drag-region>
-            <h1>Nibble <span class="badge">Web</span></h1>
+            <h1>Nibble <span class="badge" id="app-type-badge">Desktop</span></h1>
             <span class="version" id="soft-version">v1.0.4</span>
           </div>
         </div>
@@ -183,7 +198,20 @@
         <div class="dpi-layout-v2">
           <div class="card dpi-ghub-hero">
             <div class="dpi-ghub-topbar">
-              <h3>DPI Sensitivity</h3>
+              <div class="dpi-topbar-left">
+                <h3>DPI Sensitivity</h3>
+                <div class="dpi-level-count">
+                  <span>DPI Levels:</span>
+                  <div class="segmented" id="dpi-level-options">
+                    <button type="button" data-count="1">1</button>
+                    <button type="button" data-count="2">2</button>
+                    <button type="button" data-count="3">3</button>
+                    <button type="button" data-count="4">4</button>
+                    <button type="button" data-count="5">5</button>
+                    <button type="button" data-count="6" class="active">6</button>
+                  </div>
+                </div>
+              </div>
               <button class="btn ghost" id="btn-reset-dpi">Reset DPI</button>
             </div>
 
@@ -197,7 +225,7 @@
               <div class="dpi-timeline-scale" id="dpi-timeline-scale"></div>
             </div>
 
-            <!-- Bottom Bar: Stage Selection & Fine Tuning -->
+            <!-- Bottom Bar: Compact Stage Selection & Fine Tuning -->
             <div class="dpi-bottom-bar">
               <div class="dpi-stages" id="dpi-stages"></div>
               <div class="dpi-fine-controls">

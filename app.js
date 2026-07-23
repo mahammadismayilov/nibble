@@ -25,10 +25,11 @@ migrateLegacyStorage();
 
 function init() {
   const isDesktop = typeof window !== "undefined" && !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
-  if (isDesktop) {
-    const badge = document.querySelector(".title-block .badge");
-    if (badge) badge.textContent = "Desktop";
-  }
+  const badge = document.getElementById("app-type-badge");
+  if (badge) badge.textContent = isDesktop ? "Desktop" : "Web";
+
+  const platformText = document.getElementById("platform-badge-text");
+  if (platformText) platformText.textContent = isDesktop ? "Desktop App (Native HID)" : "Web Companion (WebHID)";
 
   const softVer = document.getElementById("soft-version");
   if (softVer) softVer.textContent = `v${APP_VERSION}`;

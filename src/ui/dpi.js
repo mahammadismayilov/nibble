@@ -33,6 +33,18 @@ export function renderDpi() {
   const p = profile();
   const maxDpiLimit = d.maxDpi || 26000;
 
+  // Active DPI Stage Count (1..6 preset levels)
+  const stageCount = Math.min(6, Math.max(1, p.dpiStageCount || p.dpiStages.length || 6));
+  p.dpiStageCount = stageCount;
+  if (p.activeDpi >= stageCount) p.activeDpi = stageCount - 1;
+  if (selectedDpiStage >= stageCount) setSelectedDpiStage(stageCount - 1);
+
+  document.querySelectorAll("#dpi-level-options button").forEach((btn) => {
+    btn.classList.toggle("active", Number(btn.dataset.count) === stageCount);
+  });
+
+  const enabledStages = p.dpiStages.slice(0, stageCount);
+
   // Active Stage Diamond Header Swatch
   const activeDiamond = document.getElementById("dpi-active-diamond");
   const activeStage = p.dpiStages[p.activeDpi] || p.dpiStages[0];
@@ -48,7 +60,7 @@ export function renderDpi() {
     valContainer.innerHTML = "";
     nodesContainer.innerHTML = "";
 
-    p.dpiStages.forEach((stage, i) => {
+    enabledStages.forEach((stage, i) => {
       const pct = dpiToPercent(stage.value, maxDpiLimit);
       const isActive = i === p.activeDpi;
       const isSelected = i === selectedDpiStage;
@@ -91,7 +103,7 @@ export function renderDpi() {
     });
   }
 
-  // Render Scale Ticks matching reference image (200, 1000, 2000, 3000, 4000, 6000, 8000...)
+  // Render Scale Ticks (200, 1000, 2000, 3000, 4000, 6000, 8000...)
   const scaleEl = document.getElementById("dpi-timeline-scale");
   if (scaleEl) {
     scaleEl.innerHTML = "";
@@ -108,18 +120,18 @@ export function renderDpi() {
     });
   }
 
-  // Render Stage Selector Chips
+  // Render Compact Stage Selector Chips
   const list = document.getElementById("dpi-stages");
   if (list) {
     list.innerHTML = "";
-    p.dpiStages.forEach((stage, i) => {
+    enabledStages.forEach((stage, i) => {
       const row = document.createElement("div");
       row.className = `dpi-stage${i === selectedDpiStage ? " active" : ""}`;
       row.innerHTML = `
         <span class="swatch" style="background:${stage.color}"></span>
         <span class="name">Stage ${i + 1}</span>
         <span class="value">${stage.value} DPI</span>
-        <span class="active-tag">${i === p.activeDpi ? "ACTIVE" : "Select"}</span>
+        ${i === p.activeDpi ? '<span class="active-tag">ACTIVE</span>' : ''}
       `;
       row.addEventListener("click", () => {
         setSelectedDpiStage(i);
@@ -164,6 +176,21 @@ export function renderDpi() {
 }
 
 export function bindDpiEditors() {
+  // DPI Stage Count Selector (1..6 levels)
+  document.querySelectorAll("#dpi-level-options button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const count = Number(btn.dataset.count) || 6;
+      const p = profile();
+      p.dpiStageCount = count;
+      if (p.activeDpi >= count) p.activeDpi = count - 1;
+      if (selectedDpiStage >= count) setSelectedDpiStage(count - 1);
+      saveState();
+      renderDpi();
+      renderHome();
+      queueDeviceWrite("dpi", "light");
+    });
+  });
+
   const apply = (val) => {
     const d = device();
     const p = profile();
