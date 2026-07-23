@@ -28,9 +28,6 @@ function init() {
   const badge = document.getElementById("app-type-badge");
   if (badge) badge.textContent = isDesktop ? "Desktop" : "Web";
 
-  const platformText = document.getElementById("platform-badge-text");
-  if (platformText) platformText.textContent = isDesktop ? "Desktop App (Native HID)" : "Web Companion (WebHID)";
-
   const softVer = document.getElementById("soft-version");
   if (softVer) softVer.textContent = `v${APP_VERSION}`;
   const aboutVer = document.getElementById("about-version");
