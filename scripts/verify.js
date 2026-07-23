@@ -125,7 +125,16 @@ const loadedModules = {
 
 for (const [, specifiers, modulePath] of imports) {
   const names = specifiers.split(",").map((s) => s.trim()).filter(Boolean);
-  const targetModule = loadedModules[modulePath];
+  let targetModule = loadedModules[modulePath];
+
+  if (!targetModule && (modulePath.startsWith("./src/") || modulePath.startsWith("../src/"))) {
+    try {
+      const fullPath = path.resolve(appRoot, modulePath);
+      targetModule = await import(`file:///${fullPath.replace(/\\/g, "/")}`);
+    } catch (e) {
+      logFail(`Failed to dynamically import module "${modulePath}": ${e.message}`);
+    }
+  }
 
   if (!targetModule && !modulePath.includes("telemetry")) {
     logWarn(`Unchecked module import path: "${modulePath}"`);
