@@ -424,8 +424,8 @@ try {
     }
   }
 
-  // Test Battery-Sync RGB Mode
-  const { evaluateBatteryRgbSync, buildLightPacketFromUi } = await import(`file:///${path.resolve(appRoot, "src/writer.js").replace(/\\/g, "/")}`);
+  // Test Low Battery Warning Mode
+  const { evaluateBatteryRgbSync, evaluateLowBatteryWarn, buildLightPacketFromUi } = await import(`file:///${path.resolve(appRoot, "src/writer.js").replace(/\\/g, "/")}`);
   profile().settings.batteryRgbSync = true;
   state.battery = 80;
   evaluateBatteryRgbSync(true);
@@ -435,11 +435,13 @@ try {
     logPass("evaluateBatteryRgbSync correctly assigned #00ff00 (Green) for 80% battery");
   }
 
-  const lightBuf = buildLightPacketFromUi(profile());
-  if (!lightBuf || lightBuf.length < 32) {
-    logFail("buildLightPacketFromUi returned invalid buffer during Battery-Sync RGB mode");
+  profile().settings.lowBatteryWarn = true;
+  state.battery = 10;
+  evaluateLowBatteryWarn(true);
+  if (profile().light.mode !== "breathe" || profile().light.color !== "#ff0000") {
+    logFail(`evaluateLowBatteryWarn failed for 10% battery: mode=${profile().light.mode}, color=${profile().light.color}`);
   } else {
-    logPass("buildLightPacketFromUi successfully generated HID packet during Battery-Sync RGB mode");
+    logPass("evaluateLowBatteryWarn correctly switched to Red Breathing mode for 10% battery");
   }
 
 } catch (err) {

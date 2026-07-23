@@ -292,6 +292,51 @@ export function evaluateBatteryRgbSync(force = false) {
   }
 }
 
+export function evaluateLowBatteryWarn(force = false) {
+  const p = profile();
+  if (!p) return;
+  const pct = state.battery;
+
+  if (p.settings?.lowBatteryWarn && typeof pct === "number" && pct <= 15 && !state.batteryCharging) {
+    if (!state._lowBatteryWarned || force) {
+      state._lowBatteryWarned = true;
+      if (!p.light._userMode) p.light._userMode = p.light.mode;
+      p.dpiStages.forEach((s) => {
+        if (!s.userColor) s.userColor = s.color || "#ffffff";
+      });
+      p.light.mode = "breathe";
+      if (p.dpiStages[p.activeDpi]) {
+        p.dpiStages[p.activeDpi].color = "#ff0000";
+      }
+      p.light.color = "#ff0000";
+      saveState();
+      renderDpi();
+      renderHome();
+      renderLight();
+      queueDeviceWrite("dpi", "light");
+      toast("Low battery warning triggered (Blinking Red)");
+    }
+  } else if (state._lowBatteryWarned) {
+    state._lowBatteryWarned = false;
+    if (p.light._userMode) {
+      p.light.mode = p.light._userMode;
+      delete p.light._userMode;
+    }
+    let changed = false;
+    p.dpiStages.forEach((s) => {
+      if (s.userColor && s.color !== s.userColor) {
+        s.color = s.userColor;
+        changed = true;
+      }
+    });
+    saveState();
+    renderDpi();
+    renderHome();
+    renderLight();
+    queueDeviceWrite("dpi", "light");
+  }
+}
+
 export function applyBatteryFromStatus(st) {
   if (!st || st.kind !== "status") return false;
   const now = Date.now();
@@ -394,42 +439,8 @@ export function applyBatteryFromStatus(st) {
   state.batteryConfidence = st.confidence || "";
   state.batteryDebug = st.debug || "";
 
-  const p = profile();
-  if (p?.settings?.batteryRgbSync && typeof pct === "number" && !state.batteryCharging) {
-    let tier = "green";
-    let hex = "#00ff00";
-    if (pct <= 50 && pct > 25) {
-      tier = "yellow";
-      hex = "#ffff00";
-    } else if (pct <= 25) {
-      tier = "red";
-      hex = "#ff0000";
-    }
-    
-    if (state._currentBatteryRgbTier !== tier) {
-      state._currentBatteryRgbTier = tier;
-      if (p.light.mode !== "off") {
-        p.light.color = hex;
-        saveState();
-        renderLight();
-        queueDeviceWrite("light");
-      }
-    }
-  } else if (state.batteryCharging) {
-    state._currentBatteryRgbTier = null;
-  }
-
-  if (p?.settings?.lowBatteryWarn && pct <= 15 && !state.batteryCharging && !state._lowBatteryWarned) {
-    state._lowBatteryWarned = true;
-    p.light.mode = "breathe";
-    p.light.color = "#ff0000";
-    saveState();
-    renderLight();
-    queueDeviceWrite("light");
-    toast("Low battery warning triggered (Blinking Red)");
-  } else if (state.batteryCharging) {
-    state._lowBatteryWarned = false;
-  }
+  evaluateBatteryRgbSync();
+  evaluateLowBatteryWarn();
 
   renderConnection();
   return true;

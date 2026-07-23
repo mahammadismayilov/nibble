@@ -1,7 +1,7 @@
 import { saveState, profile } from "../state.js";
 import { defaultProfile } from "../constants.js";
 import { getTheme } from "../theme.js";
-import { queueDeviceWrite, evaluateBatteryRgbSync } from "../writer.js";
+import { queueDeviceWrite, evaluateBatteryRgbSync, evaluateLowBatteryWarn } from "../writer.js";
 import { renderHome } from "./home.js";
 import { renderConnection } from "./navigation.js";
 
@@ -89,7 +89,15 @@ export function bindSettingsEditors() {
   bindCheck("opt-lmb-lock", "lmbLock", null);
   
   bindCheck("opt-fine-dpi", "fineDpi", null);
-  bindCheck("opt-low-battery-warn", "lowBatteryWarn", null);
+  
+  const lowBatEl = document.getElementById("opt-low-battery-warn");
+  if (lowBatEl) {
+    lowBatEl.addEventListener("change", (e) => {
+      profile().settings.lowBatteryWarn = e.target.checked;
+      saveState();
+      evaluateLowBatteryWarn(true);
+    });
+  }
 
   const rgbSyncEl = document.getElementById("opt-battery-rgb-sync");
   if (rgbSyncEl) {
