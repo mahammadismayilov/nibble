@@ -1,0 +1,9 @@
+{
+  "name": "nibble-app",
+  "version": "1.0.3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/verify.js"
+  }
+}
