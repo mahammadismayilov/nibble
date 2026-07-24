@@ -49,6 +49,10 @@ export function loadState() {
     for (const k of BATTERY_RUNTIME_KEYS) delete merged[k];
     clearBatteryRuntime(merged);
     merged.profiles?.forEach((p) => {
+      const defP = defaultProfile(p.deviceId);
+      p.settings = { ...defP.settings, ...(p.settings || {}) };
+      p.light = { ...defP.light, ...(p.light || {}) };
+      if (!p.dpiStages || !p.dpiStages.length) p.dpiStages = defP.dpiStages;
       if (p.keys) {
         const vals = Object.values(p.keys);
         if (vals.length > 0 && vals.every((v) => v === "disable")) {

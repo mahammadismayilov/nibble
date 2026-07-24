@@ -8,7 +8,7 @@ import { hid } from "./src/hidInstance.js";
 import { pingActiveSession } from "./telemetry.js";
 import { migrateLegacyStorage, initTheme } from "./src/theme.js";
 import { setStatus, state } from "./src/state.js";
-import { DEVICES, APP_VERSION } from "./src/constants.js";
+import { DEVICES, APP_VERSION, defaultProfile } from "./src/constants.js";
 import { connectHid } from "./src/writer.js";
 import {
   initTabs,
@@ -157,6 +157,14 @@ function showLandingScreen(grantedDevices) {
       `;
       card.addEventListener("click", () => {
         state.deviceId = dev.id;
+        let idx = state.profiles.findIndex((p) => p.deviceId === state.deviceId);
+        if (idx < 0) {
+          const p = defaultProfile(state.deviceId);
+          p.name = `Profile ${state.profiles.length + 1}`;
+          state.profiles.push(p);
+          idx = state.profiles.length - 1;
+        }
+        state.profileIndex = idx;
         const devSel = document.getElementById("device-select");
         if (devSel) devSel.value = dev.id;
         landing.style.display = "none";
