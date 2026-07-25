@@ -189,104 +189,6 @@ export function startBatteryPoll() {
   }, 2000);
 }
 
-export function evaluateBatteryRgbSync(force = false) {
-  const p = profile();
-  if (!p) return;
-  const pct = state.battery;
-
-  if (p.settings?.batteryRgbSync && !state.batteryCharging) {
-    const val = typeof pct === "number" ? pct : 100;
-    let tier = "green";
-    let hex = "#00ff00";
-    if (val <= 50 && val > 25) {
-      tier = "yellow";
-      hex = "#ffff00";
-    } else if (val <= 25) {
-      tier = "red";
-      hex = "#ff0000";
-    }
-
-    if (force || state._currentBatteryRgbTier !== tier) {
-      state._currentBatteryRgbTier = tier;
-      p.dpiStages.forEach((s) => {
-        if (!s.userColor) s.userColor = s.color || "#ffffff";
-      });
-      if (p.dpiStages[p.activeDpi]) {
-        p.dpiStages[p.activeDpi].color = hex;
-      }
-      p.light.color = hex;
-      saveState();
-      renderDpi();
-      renderHome();
-      renderLight();
-      queueDeviceWrite("dpi", "light");
-    }
-  } else {
-    if (state._currentBatteryRgbTier !== null || force) {
-      state._currentBatteryRgbTier = null;
-      let changed = false;
-      p.dpiStages.forEach((s) => {
-        if (s.userColor && s.color !== s.userColor) {
-          s.color = s.userColor;
-          changed = true;
-        }
-      });
-      if (changed || force) {
-        saveState();
-        renderDpi();
-        renderHome();
-        renderLight();
-        queueDeviceWrite("dpi", "light");
-      }
-    }
-  }
-}
-
-export function evaluateLowBatteryWarn(force = false) {
-  const p = profile();
-  if (!p) return;
-  const pct = state.battery;
-
-  if (p.settings?.lowBatteryWarn && typeof pct === "number" && pct <= 15 && !state.batteryCharging) {
-    if (!state._lowBatteryWarned || force) {
-      state._lowBatteryWarned = true;
-      if (!p.light._userMode) p.light._userMode = p.light.mode;
-      p.dpiStages.forEach((s) => {
-        if (!s.userColor) s.userColor = s.color || "#ffffff";
-      });
-      p.light.mode = "breathe";
-      if (p.dpiStages[p.activeDpi]) {
-        p.dpiStages[p.activeDpi].color = "#ff0000";
-      }
-      p.light.color = "#ff0000";
-      saveState();
-      renderDpi();
-      renderHome();
-      renderLight();
-      queueDeviceWrite("dpi", "light");
-      toast("Low battery warning triggered (Blinking Red)");
-    }
-  } else if (state._lowBatteryWarned) {
-    state._lowBatteryWarned = false;
-    if (p.light._userMode) {
-      p.light.mode = p.light._userMode;
-      delete p.light._userMode;
-    }
-    let changed = false;
-    p.dpiStages.forEach((s) => {
-      if (s.userColor && s.color !== s.userColor) {
-        s.color = s.userColor;
-        changed = true;
-      }
-    });
-    saveState();
-    renderDpi();
-    renderHome();
-    renderLight();
-    queueDeviceWrite("dpi", "light");
-  }
-}
-
 export function applyBatteryFromStatus(st) {
   if (!st || st.kind !== "status") return false;
   const now = Date.now();
@@ -393,9 +295,6 @@ export function applyBatteryFromStatus(st) {
   state.batterySource = st.source || "status";
   state.batteryConfidence = st.confidence || "";
   state.batteryDebug = st.debug || "";
-
-  evaluateBatteryRgbSync();
-  evaluateLowBatteryWarn();
 
   renderConnection();
   renderHome();

@@ -22,7 +22,6 @@ export const BATTERY_RUNTIME_KEYS = [
   "batteryDebug",
   "_lastDockFullAt",
   "_batterySeenLive",
-  "_lowBatteryWarned",
 ];
 
 export function clearBatteryRuntime(target = state) {
@@ -35,8 +34,6 @@ export function clearBatteryRuntime(target = state) {
   target.batteryDebug = "";
   target._lastDockFullAt = 0;
   target._batterySeenLive = false;
-  target._lowBatteryWarned = false;
-  target._currentBatteryRgbTier = null;
 }
 
 export function loadState() {
@@ -52,6 +49,15 @@ export function loadState() {
       const defP = defaultProfile(p.deviceId);
       p.settings = { ...defP.settings, ...(p.settings || {}) };
       p.light = { ...defP.light, ...(p.light || {}) };
+      // Restore legacy user-selected visuals locally; battery status never writes hardware.
+      p.dpiStages?.forEach((stage) => {
+        if (stage.userColor) stage.color = stage.userColor;
+        delete stage.userColor;
+      });
+      if (p.light._userMode) p.light.mode = p.light._userMode;
+      delete p.light._userMode;
+      delete p.settings.batteryRgbSync;
+      delete p.settings.lowBatteryWarn;
       if (!p.dpiStages || !p.dpiStages.length) p.dpiStages = defP.dpiStages;
       if (p.keys) {
         const vals = Object.values(p.keys);

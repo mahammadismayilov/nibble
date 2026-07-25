@@ -211,7 +211,6 @@ export function bindDpiEditors() {
     const stage = profile().dpiStages[selectedDpiStage];
     if (stage) {
       stage.color = e.target.value;
-      stage.userColor = e.target.value;
     }
     saveState();
     renderDpi();

@@ -457,24 +457,24 @@ try {
     }
   }
 
-  // Test Low Battery Warning Mode
-  const { evaluateBatteryRgbSync, evaluateLowBatteryWarn, buildLightPacketFromUi } = await import(`file:///${path.resolve(appRoot, "src/writer.js").replace(/\\/g, "/")}`);
-  profile().settings.batteryRgbSync = true;
-  state.battery = 80;
-  evaluateBatteryRgbSync(true);
-  if (profile().light.color !== "#00ff00") {
-    logFail(`evaluateBatteryRgbSync failed for 80% battery: got "${profile().light.color}", expected "#00ff00"`);
+  // Battery polling is display-only: a low battery status must not change a
+  // profile's DPI stages, lighting, or settings.
+  const { applyBatteryFromStatus } = await import(`file:///${path.resolve(appRoot, "src/writer.js").replace(/\\/g, "/")}`);
+  const profileBeforeBatteryStatus = JSON.stringify(profile());
+  applyBatteryFromStatus({
+    kind: "status",
+    battery: 10,
+    batteryRaw: 10,
+    chargeFlag: 0,
+    source: "c0",
+    online: true,
+  });
+  if (JSON.stringify(profile()) !== profileBeforeBatteryStatus) {
+    logFail("Battery status mutated DPI, lighting, or profile settings");
+  } else if (state.battery !== 10 || state.batteryCharging) {
+    logFail("Battery status did not update display-only battery state correctly");
   } else {
-    logPass("evaluateBatteryRgbSync correctly assigned #00ff00 (Green) for 80% battery");
-  }
-
-  profile().settings.lowBatteryWarn = true;
-  state.battery = 10;
-  evaluateLowBatteryWarn(true);
-  if (profile().light.mode !== "breathe" || profile().light.color !== "#ff0000") {
-    logFail(`evaluateLowBatteryWarn failed for 10% battery: mode=${profile().light.mode}, color=${profile().light.color}`);
-  } else {
-    logPass("evaluateLowBatteryWarn correctly switched to Red Breathing mode for 10% battery");
+    logPass("Battery status updates display state without mutating profile settings or queueing writes");
   }
 
 } catch (err) {

@@ -96,9 +96,7 @@ export class DriverPlugin {
     const brightness = uiBrightnessToWire(profile.light.brightness);
     const speed = uiSpeedToWire(profile.light.speed);
     const dpiColor = profile.dpiStages[profile.activeDpi]?.color || "#ff0000";
-    const color = profile.settings?.batteryRgbSync && profile.light.color
-      ? profile.light.color
-      : (profile.light.color || dpiColor);
+    const color = profile.light.color || dpiColor;
     if (profile.light.mode === "solid") return buildSolidCapture({ brightness, speed, color, allowZero: true });
     if (profile.light.mode === "off") return buildOffCapture();
     if (profile.light.mode === "breathe") return buildBreatheCapture({ brightness, speed, color, useRainbow: false, allowZero: true });

@@ -43,30 +43,18 @@ export function renderLight() {
   const dpiCol = p.dpiStages[p.activeDpi]?.color || "#ff0000";
 
   if (p.light.mode === "solid" || p.light.mode === "breathe") {
-    if (p.settings?.batteryRgbSync) {
-      if (colorInput) {
-        colorInput.value = toHex(p.light.color || "#00ff00");
-        colorInput.disabled = true;
-      }
-      if (colorRow) colorRow.style.opacity = "0.55";
-      if (speedRow) speedRow.style.display = p.light.mode === "solid" ? "none" : "";
-      if (note) {
-        note.textContent = "Battery-Sync RGB Mode Active — LED color reflects current battery level (Green > 50%, Yellow 25-50%, Red < 25%).";
-      }
-    } else {
-      p.light.color = dpiCol;
-      if (colorInput) {
-        colorInput.value = toHex(dpiCol);
-        colorInput.disabled = true;
-      }
-      if (colorRow) colorRow.style.opacity = "0.55";
-      if (speedRow) speedRow.style.display = p.light.mode === "solid" ? "none" : "";
-      if (note) {
-        const modeName = p.light.mode === "solid" ? "Constant" : "Breathing";
-        const extraSpeed = p.light.mode === "breathe" ? " Speed & brightness apply." : "";
-        note.textContent =
-          `${modeName} mode has no separate color (same as official app). LED color = active DPI stage color — change it on the DPI tab.${extraSpeed}`;
-      }
+    p.light.color = dpiCol;
+    if (colorInput) {
+      colorInput.value = toHex(dpiCol);
+      colorInput.disabled = true;
+    }
+    if (colorRow) colorRow.style.opacity = "0.55";
+    if (speedRow) speedRow.style.display = p.light.mode === "solid" ? "none" : "";
+    if (note) {
+      const modeName = p.light.mode === "solid" ? "Constant" : "Breathing";
+      const extraSpeed = p.light.mode === "breathe" ? " Speed & brightness apply." : "";
+      note.textContent =
+        `${modeName} mode has no separate color (same as official app). LED color = active DPI stage color — change it on the DPI tab.${extraSpeed}`;
     }
   } else if (p.light.mode === "off") {
     if (colorInput) colorInput.disabled = true;
@@ -121,9 +109,7 @@ export function updateLightPreview() {
   const color =
     p.light.mode === "off"
       ? "#000000"
-      : p.settings?.batteryRgbSync && p.light.color
-        ? p.light.color
-        : p.light.mode === "solid"
+      : p.light.mode === "solid"
           ? dpiCol
           : p.light.color || dpiCol;
   const bright = p.light.brightness / 100;
