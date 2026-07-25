@@ -1,32 +1,7 @@
 import {
-  buildReportRate,
-  buildDpi,
-  buildDpiRgb,
-  buildLight,
-  buildSolidCapture,
-  buildOffCapture,
-  buildBreatheCapture,
-  buildSensor,
-  buildPower,
-  buildKeyMap,
-  buildStatusQuery,
   KEY_FUNC_PROVEN,
-  lightIdToWire,
   wireToLightId,
-  parseStatus,
   normalizeBatteryPercent,
-  uiBrightnessToWire,
-  uiSpeedToWire,
-  buildReportRateGet,
-  parseReportRateResponse,
-  buildDpiGet,
-  parseDpiResponse,
-  parseLightResponse,
-  buildSensorGet,
-  parseSensorResponse,
-  buildKeyMapGet,
-  parseKeyMapResponse,
-  buildLightGet,
 } from "../protocol.js";
 
 import { sendHardwareTelemetry } from "../telemetry.js";
@@ -64,40 +39,15 @@ export function keyFuncsInWireOrder(p, d = device()) {
   return [0, 1, 2, 3, 4, 5].map((kv) => byKv.get(kv) || "disable");
 }
 
-export function buildLightPacketFromUi(p) {
-  const bri = uiBrightnessToWire(p.light.brightness);
-  const spd = uiSpeedToWire(p.light.speed);
-  const dpiColor = p.dpiStages[p.activeDpi]?.color || "#ff0000";
-  const activeColor = (p.settings?.batteryRgbSync && p.light.color) ? p.light.color : dpiColor;
+function activeDriver() {
+  // Transport identity is authoritative until the device-status handshake has
+  // selected a profile. This avoids using a stale CompX profile for Yichip HID.
+  const byVendor = driverRegistry.getDriverForVendor(hid.info?.vendorId);
+  return byVendor || driverRegistry.getDriverForDevice(device());
+}
 
-  if (p.light.mode === "solid") {
-    return buildSolidCapture({
-      brightness: bri,
-      speed: spd,
-      color: activeColor,
-      allowZero: true,
-    });
-  }
-  if (p.light.mode === "off") {
-    return buildOffCapture();
-  }
-  if (p.light.mode === "breathe") {
-    return buildBreatheCapture({
-      brightness: bri,
-      speed: spd,
-      color: activeColor,
-      useRainbow: false,
-      allowZero: true,
-    });
-  }
-  return buildLight(lightIdToWire(p.light.mode), {
-    brightness: bri,
-    speed: spd,
-    color: p.settings?.batteryRgbSync && p.light.color ? p.light.color : (p.light.color || activeColor),
-    off: p.light.mode === "off",
-    useRainbow: false,
-    allowZero: true,
-  });
+export function buildLightPacketFromUi(p) {
+  return activeDriver().buildLightFromUi(p);
 }
 
 /** Queue a scoped HID write. Always saves locally; writes mouse only when connected. */
@@ -118,11 +68,11 @@ export async function flushDeviceWrites() {
   _pendingScopes.clear();
   const p = profile();
   const d = device();
-  const activeDriver = driverRegistry.getDriverForDevice(d) || driverRegistry.getDriverForVendor(hid.info?.vendorId);
+  const protocolDriver = activeDriver();
 
   const send = async (buf, opts = {}, scope = "general") => {
-    const xferOpts = activeDriver
-      ? activeDriver.getTransferOptions(scope, opts)
+    const xferOpts = protocolDriver
+      ? protocolDriver.getTransferOptions(scope, opts)
       : {
           timeoutMs: 900,
           retries: 2,
@@ -145,12 +95,12 @@ export async function flushDeviceWrites() {
     }
 
     if (scopes.has("rate")) {
-      await send(buildReportRate(p.reportRateIndex), {}, "rate");
+      await send(protocolDriver.buildSetReportRate(p.reportRateIndex), {}, "rate");
     }
     if (scopes.has("dpi") || scopes.has("light")) {
       if (scopes.has("dpi")) {
         await send(
-          buildDpi(
+          protocolDriver.buildSetDpi(
             p.dpiStages.map((s) => ({ value: s.value })),
             p.activeDpi,
             0
@@ -160,7 +110,7 @@ export async function flushDeviceWrites() {
         );
       }
       await send(
-        buildDpiRgb(p.dpiStages.map((s) => s.color || "#ffffff")),
+        protocolDriver.buildSetDpiRgb(p.dpiStages.map((s) => s.color || "#ffffff")),
         { exact: true },
         "dpiRgb"
       );
@@ -172,14 +122,14 @@ export async function flushDeviceWrites() {
       const funcs = keyFuncsInWireOrder(p, d);
       const unknown = funcs.filter((f) => !KEY_FUNC_PROVEN.has(f));
       if (!unknown.length) {
-        const kbuf = buildKeyMap(funcs);
+        const kbuf = protocolDriver.buildSetKeymap(funcs);
         await send(kbuf, { exact: true }, "keys");
         await send(kbuf, { exact: true }, "keys");
       }
     }
     if (scopes.has("sensor")) {
       await send(
-        buildSensor({
+        protocolDriver.buildSetSensor({
           lod: p.settings.lod === "high" ? 2 : 1,
           angleSnap: p.settings.angleSnap,
           ripple: p.settings.ripple,
@@ -190,7 +140,7 @@ export async function flushDeviceWrites() {
     }
     if (scopes.has("power")) {
       await send(
-        buildPower({
+        protocolDriver.buildSetPower({
           sleepWire: p.settings.sleepWire ?? p.settings.sleepMin,
           moveWake: p.settings.moveWake,
           moveCloseLight: p.settings.moveCloseLight,
@@ -473,20 +423,17 @@ export async function readStatusFromDevice(opts = {}) {
 
   const prev = hid._onReport;
   hid.onReport((payload) => {
-    consider(parseStatus(payload));
+    consider(activeDriver().parseStatus(payload));
     if (typeof prev === "function") prev(payload);
   });
 
   try {
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
-        const resp = await hid.xfer(buildStatusQuery(), {
-          timeoutMs: 900,
-          retries: 2,
-          preferStrip1: true,
-        });
+        const driver = activeDriver();
+        const resp = await hid.xfer(driver.buildStatusQuery(), driver.getTransferOptions("status"));
         lastResp = resp;
-        consider(parseStatus(resp));
+        consider(driver.parseStatus(resp));
         if (bestC0 || (state.battery != null && state._batterySeenLive && !state.batteryCharging))
           break;
       } catch (_) {
@@ -510,7 +457,7 @@ export async function readStatusFromDevice(opts = {}) {
       const sl = state.batteryOnline === false ? " · sleeping" : "";
       toast(`Status · ${pct}${ch}${sl}`);
     }
-    return bestC0 || bestAny || (lastResp ? parseStatus(lastResp) : null);
+    return bestC0 || bestAny || (lastResp ? activeDriver().parseStatus(lastResp) : null);
   } finally {
     _batteryReadBusy = false;
     hid.onReport(prev);
@@ -545,7 +492,7 @@ export async function connectHid(pickerChosen = false) {
     );
     hid.onReport((payload) => {
       const u8 = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-      const st = parseStatus(u8);
+      const st = activeDriver().parseStatus(u8);
       if (st?.kind === "status") applyBatteryFromStatus(st);
 
       const isC2 = (u8.length >= 4) && (u8[0] === 0xc2 || (u8[0] === 0x00 && u8[1] === 0xc2));
@@ -643,18 +590,15 @@ export async function syncProfileFromDevice() {
   if (!hid.connected) throw new Error("Not connected");
   const p = profile();
   const log = [];
+  const protocolDriver = activeDriver();
 
   const xferGet = async (buf) => {
-    return hid.xfer(buf, {
-      timeoutMs: 900,
-      retries: 2,
-      preferStrip1: true,
-    });
+    return hid.xfer(buf, protocolDriver.getTransferOptions("read"));
   };
 
   try {
-    const raw = await xferGet(buildReportRateGet());
-    const rateResult = parseReportRateResponse(raw);
+    const raw = await xferGet(protocolDriver.buildGetReportRate());
+    const rateResult = protocolDriver.parseReportRate(raw);
     if (rateResult && typeof rateResult.rateIndex === "number" && rateResult.rateIndex >= 0) {
       p.reportRateIndex = rateResult.rateIndex;
       log.push(`Rate: ${device().reportRates[rateResult.rateIndex] || rateResult.rateIndex}Hz`);
@@ -665,8 +609,8 @@ export async function syncProfileFromDevice() {
   await sleep(40);
 
   try {
-    const raw = await xferGet(buildDpiGet());
-    const dpiInfo = parseDpiResponse(raw);
+    const raw = await xferGet(protocolDriver.buildGetDpi());
+    const dpiInfo = protocolDriver.parseDpi(raw);
     if (dpiInfo) {
       // Apply actual DPI values read from the device hardware
       if (dpiInfo.stages && dpiInfo.stages.length > 0) {
@@ -688,8 +632,8 @@ export async function syncProfileFromDevice() {
   await sleep(40);
 
   try {
-    const raw = await xferGet(buildKeyMapGet());
-    const funcs = parseKeyMapResponse(raw);
+    const raw = await xferGet(protocolDriver.buildGetKeymap());
+    const funcs = protocolDriver.parseKeymap(raw);
     if (Array.isArray(funcs) && funcs.length === 6) {
       if (!funcs.every((v) => v === "disable")) {
         const devKeys = device().keys;
@@ -708,8 +652,8 @@ export async function syncProfileFromDevice() {
   await sleep(40);
 
   try {
-    const raw = await xferGet(buildSensorGet());
-    const sensor = parseSensorResponse(raw);
+    const raw = await xferGet(protocolDriver.buildGetSensor());
+    const sensor = protocolDriver.parseSensor(raw);
     if (sensor) {
       p.settings = { ...p.settings, ...sensor };
       log.push("Sensor synced");
@@ -720,8 +664,8 @@ export async function syncProfileFromDevice() {
   await sleep(40);
 
   try {
-    const raw = await xferGet(buildLightGet());
-    const lt = parseLightResponse(raw);
+    const raw = await xferGet(protocolDriver.buildGetLight());
+    const lt = protocolDriver.parseLight(raw);
     if (lt) {
       let modeId = wireToLightId(lt.mode);
       if (lt.meta === 0x05) modeId = "solid";

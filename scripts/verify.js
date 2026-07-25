@@ -81,6 +81,23 @@ const requiredDriverMethods = [
   "getTransferOptions",
   "buildStatusQuery",
   "buildSetReportRate",
+  "buildSetDpi",
+  "buildSetDpiRgb",
+  "buildSetKeymap",
+  "buildSetLight",
+  "buildSetSensor",
+  "buildSetPower",
+  "buildGetReportRate",
+  "buildGetDpi",
+  "buildGetKeymap",
+  "buildGetSensor",
+  "buildGetLight",
+  "parseStatus",
+  "parseReportRate",
+  "parseDpi",
+  "parseKeymap",
+  "parseSensor",
+  "parseLight",
 ];
 
 const compx = driverRegistry.getDriver("compx");
@@ -98,6 +115,22 @@ for (const drv of [compx, yichip]) {
   const opts = drv.getTransferOptions("rate");
   if (typeof opts !== "object" || typeof opts.allowNoReply !== "boolean") {
     logFail(`Driver "${drv.name}" getTransferOptions() returned invalid options structure`);
+    drvValid = false;
+  }
+
+  const packets = [
+    drv.buildStatusQuery(),
+    drv.buildSetReportRate(3),
+    drv.buildSetDpi([{ value: 800 }], 0, {}, 0),
+    drv.buildSetDpiRgb(["#ffffff"]),
+    drv.buildSetKeymap(["left", "right", "middle", "backward", "forward", "dpi_loop"]),
+    drv.buildSetLight(1, { brightness: 2, speed: 2, color: "#ffffff" }),
+    drv.buildSetSensor({ lod: 1 }),
+    drv.buildSetPower({ sleepWire: 30 }),
+    drv.buildGetReportRate(), drv.buildGetDpi(), drv.buildGetKeymap(), drv.buildGetSensor(), drv.buildGetLight(),
+  ];
+  if (packets.some((packet) => !(packet instanceof Uint8Array))) {
+    logFail(`Driver "${drv.name}" did not return valid packet buffers for its complete protocol surface`);
     drvValid = false;
   }
 
