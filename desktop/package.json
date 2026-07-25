@@ -1,0 +1,21 @@
+{
+  "name": "nibble-desktop",
+  "version": "1.0.4",
+  "description": "Nibble Native Desktop Companion — WebHID Mouse Configuration & System Tray Battery Meter",
+  "main": "index.html",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-autostart": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "vite": "^5.4.0"
+  }
+}

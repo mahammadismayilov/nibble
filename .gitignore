@@ -1,2 +1,6 @@
 node_modules/
-dist/
+webapp/node_modules/
+webapp/dist/
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/

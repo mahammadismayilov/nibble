@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Nibble Desktop — Mouse Configuration & Battery Meter</title>
+  <link rel="icon" href="/assets/nibble.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script>
+    /* Apply theme before paint */
+    (function () {
+      try {
+        var t = localStorage.getItem("nibble-theme") || localStorage.getItem("ajazz-theme");
+        if (t !== "light" && t !== "dark") {
+          t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div class="bg-layer"></div>
+  <div class="landing-screen" id="landing-screen">
+    <div class="landing-content">
+      <img src="../webapp/assets/nibble.svg" alt="Nibble Desktop" class="landing-logo" width="64" height="64" />
+      <h1 class="landing-title">Nibble Desktop</h1>
+      <p class="landing-subtitle">Connect your wireless mouse or choose a profile</p>
+      <div class="landing-grid" id="landing-grid">
+        <!-- Injected via JS -->
+      </div>
+      <button class="btn primary btn-large" id="btn-landing-connect">Connect new mouse</button>
+    </div>
+  </div>
+
+  <div class="app" id="main-app" style="display: none;">
+    <!-- Top chrome -->
+    <div class="top-chrome">
+      <header class="titlebar">
+        <div class="titlebar-left">
+          <img class="brand-logo" src="../webapp/assets/nibble.svg" width="28" height="28" alt="" />
+          <div class="title-block">
+            <h1>Nibble <span class="badge">Desktop</span></h1>
+            <span class="version" id="soft-version">v1.0.4</span>
+          </div>
+        </div>
+        <div class="titlebar-center">
+          <div class="device-picker">
+            <label for="device-select" class="sr-only">Device</label>
+            <select id="device-select" class="select-quiet"></select>
+          </div>
+          <div class="connection offline" id="connection-status">
+            <span class="dot"></span>
+            <span class="conn-text">Not connected</span>
+          </div>
+          <button type="button" class="btn primary btn-compact" id="btn-connect">Connect</button>
+          <button type="button" class="btn ghost btn-compact" id="btn-disconnect" hidden>Disconnect</button>
+        </div>
+        <div class="titlebar-right">
+          <div class="battery" id="battery" title="Battery">
+            <div class="battery-shell">
+              <div class="battery-level" id="battery-level"></div>
+            </div>
+            <span id="battery-pct">—</span>
+          </div>
+          <div class="profile-chip">
+            <label for="profile-select" class="sr-only">Profile</label>
+            <select id="profile-select" class="select-quiet"></select>
+          </div>
+          <button
+            type="button"
+            class="theme-toggle"
+            id="btn-theme"
+            title="Toggle theme"
+            aria-label="Toggle light and dark theme"
+          >
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5z" />
+            </svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <nav class="tabs" id="tabs" role="tablist" aria-label="Sections">
+        <button type="button" class="tab active" role="tab" aria-selected="true" data-tab="home"><span>Home</span></button>
+        <button type="button" class="tab" role="tab" aria-selected="false" data-tab="keys"><span>Keys</span></button>
+        <button type="button" class="tab" role="tab" aria-selected="false" data-tab="dpi"><span>DPI</span></button>
+        <button type="button" class="tab" role="tab" aria-selected="false" data-tab="light"><span>Lighting</span></button>
+        <button type="button" class="tab" role="tab" aria-selected="false" data-tab="macro"><span>Macro</span></button>
+        <button type="button" class="tab" role="tab" aria-selected="false" data-tab="settings"><span>Settings</span></button>
+        <button type="button" class="tab" role="tab" aria-selected="false" data-tab="about"><span>About</span></button>
+      </nav>
+    </div>
+
+    <main class="content">
+      <!-- HOME -->
+      <section class="panel active" id="panel-home">
+        <div class="bento" id="home-bento">
+          <div class="bento-tile bento-hero">
+            <div class="stage-glow" id="stage-glow"></div>
+            <div class="hero-body">
+              <h2 class="hero-title" id="home-dev-name">Select a device</h2>
+              <p class="hero-sub" id="home-dev-sub">Connect via WebHID to start configuring</p>
+              <div class="mouse-stage">
+                <img id="home-mouse-img" src="../webapp/assets/device/mouse_aj179.png" alt="" class="mouse-render" />
+                <div class="light-orb" id="light-orb"></div>
+              </div>
+            </div>
+          </div>
+          <div class="bento-tile bento-stat bento-battery">
+            <span class="stat-label">Battery</span>
+            <span class="stat-value small" id="stat-battery">—</span>
+            <span class="stat-sub" id="stat-battery-sub">Connect to read</span>
+          </div>
+          <div class="bento-tile bento-stat">
+            <span class="stat-label">Active DPI</span>
+            <span class="stat-value" id="stat-dpi">800</span>
+            <span class="stat-sub" id="stat-dpi-stage">Stage 1 of 6</span>
+          </div>
+          <div class="bento-tile bento-stat">
+            <span class="stat-label">Polling Rate</span>
+            <span class="stat-value" id="stat-rate">1000Hz</span>
+            <span class="stat-sub">Report rate</span>
+          </div>
+          <div class="bento-tile bento-stat">
+            <span class="stat-label">Lighting</span>
+            <span class="stat-value small" id="stat-light">Constant</span>
+            <span class="stat-sub" id="stat-light-sub">Active mode</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- KEYS -->
+      <section class="panel" id="panel-keys">
+        <div class="panel-header">
+          <h2>Key Mapping</h2>
+          <p>Click a button on the visual layout to assign actions</p>
+        </div>
+        <div class="keys-layout">
+          <div class="visual-col">
+            <div class="mouse-visual-container">
+              <img id="keys-mouse-img" src="../webapp/assets/device/mouse_aj179.png" alt="" class="mouse-render" />
+              <div class="hotspot hotspot-lmb" data-key="0" title="Left Click">1</div>
+              <div class="hotspot hotspot-rmb" data-key="1" title="Right Click">2</div>
+              <div class="hotspot hotspot-mmb" data-key="2" title="Middle Click">3</div>
+              <div class="hotspot hotspot-fwd" data-key="3" title="Forward">4</div>
+              <div class="hotspot hotspot-back" data-key="4" title="Back">5</div>
+              <div class="hotspot hotspot-dpi" data-key="5" title="DPI Loop">6</div>
+            </div>
+          </div>
+          <div class="editor-col">
+            <div class="editor-card">
+              <h3 id="selected-key-title">Select a button</h3>
+              <p class="editor-desc" id="selected-key-desc">Click any hotspot on the left</p>
+              <div class="field" id="key-assign-field" style="display: none;">
+                <label for="key-function-select">Assigned Action</label>
+                <select id="key-function-select" class="select-full"></select>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn secondary" id="btn-reset-keys">Reset key assignments</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DPI -->
+      <section class="panel" id="panel-dpi">
+        <div class="panel-header">
+          <h2>DPI Stages & Polling Rate</h2>
+          <p>Configure sensitivity stages and USB report rate</p>
+        </div>
+        <div class="grid-2col">
+          <div class="card">
+            <h3>DPI Stages</h3>
+            <div class="dpi-stages-list" id="dpi-stages-list"></div>
+            <div class="dpi-slider-group" id="dpi-slider-group">
+              <div class="slider-header">
+                <span id="dpi-slider-label">Stage 1 DPI</span>
+                <input type="number" id="dpi-input" class="input-number" min="50" max="26000" step="50" value="800" />
+              </div>
+              <input type="range" id="dpi-slider" class="range-slider" min="50" max="26000" step="50" value="800" />
+            </div>
+            <div class="color-picker-row">
+              <label for="dpi-color">Stage Color</label>
+              <input type="color" id="dpi-color" value="#00ff00" />
+            </div>
+            <div class="actions">
+              <button type="button" class="btn secondary" id="btn-reset-dpi">Reset DPI defaults</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Polling Rate</h3>
+            <p class="card-desc">Select USB report rate (Hz)</p>
+            <div class="segmented" id="report-rates"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LIGHTING -->
+      <section class="panel" id="panel-light">
+        <div class="panel-header">
+          <h2>Lighting Effects</h2>
+          <p>Customize RGB lighting modes, brightness, and animation speed</p>
+        </div>
+        <div class="grid-2col">
+          <div class="card">
+            <h3>Lighting Mode</h3>
+            <div class="light-mode-grid" id="light-modes"></div>
+          </div>
+          <div class="card">
+            <h3>Effect Settings</h3>
+            <div class="field">
+              <label for="light-brightness">Brightness (<span id="light-brightness-val">100%</span>)</label>
+              <input type="range" id="light-brightness" class="range-slider" min="0" max="100" value="100" />
+            </div>
+            <div class="field" id="light-speed-row">
+              <label for="light-speed">Speed (<span id="light-speed-val">3</span>)</label>
+              <input type="range" id="light-speed" class="range-slider" min="1" max="5" value="3" />
+            </div>
+            <div class="field" id="light-color-row">
+              <label for="light-color">Color</label>
+              <input type="color" id="light-color" value="#00ff00" />
+            </div>
+            <p class="hint-text" id="light-mode-note"></p>
+            <div class="actions">
+              <button type="button" class="btn secondary" id="btn-reset-light">Reset lighting</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MACRO -->
+      <section class="panel" id="panel-macro">
+        <div class="panel-header">
+          <h2>Macro Editor</h2>
+          <p>Record key sequences for quick execution</p>
+        </div>
+        <div class="card card-center">
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+            </svg>
+            <h3>Macro Manager</h3>
+            <p>Macro creation is coming in a future update. Key remapping is available on the Keys tab.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="panel" id="panel-settings">
+        <div class="panel-header">
+          <h2>Sensor & Power Settings</h2>
+          <p>Fine-tune sensor parameters, debounce times, and power management</p>
+        </div>
+        <div class="grid-2col">
+          <div class="card">
+            <h3>Sensor Performance</h3>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-title">Lift-Off Distance (LOD)</span>
+                <span class="setting-desc">Sensor cutoff height from surface</span>
+              </div>
+              <div class="segmented" id="lod-options">
+                <button type="button" data-value="low">Low (1mm)</button>
+                <button type="button" data-value="high">High (2mm)</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-title">Angle Snapping</span>
+                <span class="setting-desc">Straighten horizontal/vertical cursor lines</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-angle-snap" /><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-title">Ripple Control</span>
+                <span class="setting-desc">Smooth high-DPI jitter (may add minor delay)</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-ripple" /><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-title">Fine DPI Adjust (50 DPI Steps)</span>
+                <span class="setting-desc">Allow 50 DPI increments on DPI tab</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-fine-dpi" /><span></span></label>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Power & Response</h3>
+            <div class="field">
+              <label for="opt-debounce">Button Debounce Delay (ms)</label>
+              <select id="opt-debounce" class="select-full">
+                <option value="0">0ms (Lowest latency / Rapid click)</option>
+                <option value="2">2ms</option>
+                <option value="4" selected>4ms (Recommended)</option>
+                <option value="8">8ms</option>
+                <option value="12">12ms</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="opt-sleep">Wireless Sleep Timeout (sec)</label>
+              <select id="opt-sleep" class="select-full">
+                <option value="10">10 seconds</option>
+                <option value="30" selected>30 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="300">5 minutes</option>
+                <option value="600">10 minutes</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-title">Low Battery Warning</span>
+                <span class="setting-desc">Changes RGB to Breathing Red when battery drops below 15%</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-low-battery-warn" /><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-title">Battery-Sync RGB Mode</span>
+                <span class="setting-desc">Changes LED color based on battery (Green &gt; 50, Yellow &gt; 25, Red &lt; 25)</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="opt-battery-rgb-sync" /><span></span></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABOUT -->
+      <section class="panel" id="panel-about">
+        <div class="panel-header">
+          <h2>About Nibble Desktop</h2>
+          <p>Native Desktop Mouse Configurator & Taskbar Battery Meter</p>
+        </div>
+        <div class="card">
+          <div class="about-brand">
+            <img src="../webapp/assets/nibble.svg" alt="" width="56" height="56" />
+            <div>
+              <h3>Nibble Native Desktop</h3>
+              <p class="version-tag">Version 1.0.4 — System Tray Edition</p>
+            </div>
+          </div>
+          <p class="about-text">
+            Nibble Desktop is a native cross-platform application for PAW3395 & PAW3950 gaming mice.
+            It provides WebHID configuration, system tray battery status, and autostart capabilities.
+          </p>
+          <div class="actions">
+            <button type="button" class="btn secondary" id="btn-export-profile">Export Profile JSON</button>
+            <label class="btn secondary label-btn">
+              Import Profile JSON
+              <input type="file" id="input-import-profile" accept=".json" style="display: none;" />
+            </label>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script>
+    (function () {
+      function showTab(name) {
+        if (!name) return;
+        document.querySelectorAll("#tabs .tab").forEach(function (t) {
+          var on = t.getAttribute("data-tab") === name;
+          t.classList.toggle("active", on);
+          t.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        document.querySelectorAll("main.content > section.panel, section.panel").forEach(function (p) {
+          p.classList.toggle("active", p.id === "panel-" + name);
+        });
+      }
+      window.__nibbleShowTab = showTab;
+      document.addEventListener(
+        "click",
+        function (e) {
+          var tab = e.target.closest && e.target.closest("#tabs .tab, .tabs .tab");
+          if (!tab) return;
+          e.preventDefault();
+          showTab(tab.getAttribute("data-tab"));
+        },
+        true
+      );
+    })();
+  </script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
