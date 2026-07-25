@@ -2,13 +2,13 @@ export const profile = {
   id: "attackshark_r1",
   name: "Attack Shark R1",
   type: 201,
-  driver: "yichip",
+  driver: "compx",
   image: "assets/device/mouse_attackshark_r1.png",
   sensor: "PAW3311",
   maxDpi: 18000,
   modes: [
-    { value: 0, desc: "2.4G Wireless", vid: "3151", pid: "4028", devId: "AS_R1" },
-    { value: 1, desc: "Wired USB", vid: "3151", pid: "4026", devId: "AS_R1" },
+    { value: 0, desc: "2.4G Wireless", vid: "1D57", pid: "FA60", devId: "AS_R1" },
+    { value: 1, desc: "Wired USB", vid: "1D57", pid: "FA61", devId: "AS_R1" },
   ],
   keys: [
     { id: 201, keyValue: 0, direction: "right", x: 29.3, y: 29.7, defaultFunc: "left", lockedDefault: true },

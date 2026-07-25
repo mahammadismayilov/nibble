@@ -1,5 +1,5 @@
 /**
- * Nibble HID protocol helpers (VID 248A/249A config interface).
+ * Nibble HID protocol helpers (CompX-compatible config interfaces).
  * Packets reconstructed from OEM tooling static analysis + USB captures.
  *
  * Buffer (Windows-style, report id at [0]):
@@ -22,8 +22,8 @@ export const CMD = {
   RESET: 0x0f,
 };
 
-export const VIDS = [0x248a, 0x249a, 0x3151];
-export const PIDS = [0x5c2e, 0x5d2e, 0x5e2e, 0x5c2f, 0x5007, 0x502d, 0x402d, 0x4026];
+export const VIDS = [0x1d57, 0x248a, 0x249a, 0x3151];
+export const PIDS = [0x5c2e, 0x5d2e, 0x5e2e, 0x5c2f, 0x5007, 0x502d, 0x402d, 0x4026, 0xfa55, 0xfa60, 0xfa61];
 
 /** Checksum from FUN_00448e40 / FUN_00448d40 */
 export function checksum(buf) {

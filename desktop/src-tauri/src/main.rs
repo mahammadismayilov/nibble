@@ -22,7 +22,7 @@ struct NativeHidDevice {
     usage: u16,
 }
 
-const VIDS: &[u16] = &[0x248A, 0x249A, 0x258A, 0x1A2C, 0x3554];
+const VIDS: &[u16] = &[0x1D57, 0x248A, 0x249A, 0x258A, 0x1A2C, 0x3554];
 
 // Channel-based HID worker to avoid Send issues with hidapi::HidDevice
 enum HidCmd {

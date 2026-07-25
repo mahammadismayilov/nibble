@@ -1,12 +1,12 @@
 import { DriverPlugin } from "./base.js";
 
 /**
- * CompX Micro-Controller Driver Plugin (VID 0x248A / 0x249A).
+ * CompX-compatible Micro-Controller Driver Plugin (including BK3633/CX5285).
  * Encapsulates CompX 33-byte HID packets & checksum logic.
  */
 export class CompXDriver extends DriverPlugin {
   constructor(options = {}) {
-    super("compx", "CompX Solution", [0x248a, 0x249a], {
+    super("compx", "CompX-compatible Solution", [0x1d57, 0x248a, 0x249a], {
       allowNoReply: true,
       timeoutMs: 900,
       retries: 2,

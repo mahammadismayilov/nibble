@@ -67,7 +67,8 @@ git clone https://github.com/mahammadismayilov/nibble.git
 | **AJAZZ AJ159 PRO** | PAW3395 | 26,000 DPI | 8000 Hz (8K) | Yichip (`VID_3151` · `PID_402D` / `4026`) | Community Test Pending |
 | **AJAZZ AJ159 / AJ159P / MC** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A` / `249A`) | Protocol Supported |
 | **AJAZZ AJ139 Pro** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A` / `249A`) | Protocol Supported |
-| **Attack Shark R1** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A`) | Protocol Supported |
+| **Attack Shark R1** | PAW3311 | 18,000 DPI | 1000 Hz | BK3633 / CompX-compatible (`VID_1D57`, `PID_FA60` / `FA61`) | Community Test Pending |
+| **Attack Shark X11** | PAW3311 | 18,000 DPI | 1000 Hz | BK3633 / CompX-compatible (`VID_1D57`, `PID_FA60` / `FA55`) | Community Test Pending |
 | **Attack Shark X3** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A`) | Protocol Supported |
 | **VXE Dragonfly F1** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A`) | Protocol Supported |
 
