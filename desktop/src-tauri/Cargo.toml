@@ -1,6 +1,6 @@
 [package]
 name = "nibble-desktop"
-version = "1.0.4"
+version = "1.0.6"
 description = "Nibble Native Desktop Companion"
 authors = ["Nibble Team"]
 edition = "2021"

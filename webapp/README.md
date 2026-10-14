@@ -1,7 +1,6 @@
 # Nibble
 
 <p>
-  <a href="https://nibble.app.qafqazsiradaglari.xyz"><strong>Launch Web App ⚡</strong></a> ·
   <a href="https://nibble.qafqazsiradaglari.xyz"><strong>Website</strong></a> ·
   <a href="https://github.com/mahammadismayilov/nibble/releases"><strong>Releases</strong></a> ·
   <a href="https://nibble.qafqazsiradaglari.xyz/#pricing"><strong>Support</strong></a>
@@ -16,9 +15,9 @@ Configure DPI, 8K polling rate, lighting, keys, and power — no Windows install
 
 ## Quick start
 
-### 🌐 Web App (No Install)
+### Run in your browser
 
-Open **[nibble.app.qafqazsiradaglari.xyz](https://nibble.app.qafqazsiradaglari.xyz)** in **Chrome** or **Edge** — WebHID talks to your mouse receiver directly in browser!
+Run the app locally in **Chrome** or **Edge**. WebHID talks to your mouse receiver directly in the browser.
 
 **You need Chrome or Edge** — WebHID doesn't work in Firefox or Safari.
 

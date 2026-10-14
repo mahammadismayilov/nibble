@@ -23,8 +23,10 @@ import { DEVICES, defaultProfile } from "./constants.js";
 import { renderConnection, renderAll, renderDpi, renderHome, renderLight, renderSensor, renderSettings, renderKeys } from "./ui/navigation.js";
 
 const APPLY_DEBOUNCE_MS = 280;
+const INTER_WRITE_MS = 90;
 let _applyTimer = null;
 let _applyBusy = false;
+let _flushActive = false;
 const _pendingScopes = new Set();
 
 function sleep(ms) {
@@ -64,6 +66,7 @@ export async function flushDeviceWrites() {
   if (!hid.connected || _applyBusy) return;
   if (!_pendingScopes.size) return;
   _applyBusy = true;
+  _flushActive = true;
   const scopes = new Set(_pendingScopes);
   _pendingScopes.clear();
   const p = profile();
@@ -74,14 +77,14 @@ export async function flushDeviceWrites() {
     const xferOpts = protocolDriver
       ? protocolDriver.getTransferOptions(scope, opts)
       : {
-          timeoutMs: 900,
-          retries: 2,
+          timeoutMs: 350,
+          retries: 3,
           preferStrip1: true,
           allowNoReply: true,
           ...opts,
         };
     await hid.xfer(buf, xferOpts);
-    await sleep(30);
+    await sleep(INTER_WRITE_MS);
   };
 
   try {
@@ -152,6 +155,7 @@ export async function flushDeviceWrites() {
     }
   } finally {
     _applyBusy = false;
+    _flushActive = false;
     if (_pendingScopes.size && hid.connected) {
       clearTimeout(_applyTimer);
       _applyTimer = setTimeout(() => {
@@ -184,7 +188,8 @@ export function startBatteryPoll() {
       stopBatteryPoll();
       return;
     }
-    if (_batteryReadBusy) return;
+    // OEM single-flight: never poll while a settings flush owns the wire.
+    if (_batteryReadBusy || _applyBusy || _flushActive) return;
     readStatusFromDevice({ quiet: true }).catch(() => {});
   }, 2000);
 }
@@ -327,7 +332,8 @@ export async function readStatusFromDevice(opts = {}) {
   });
 
   try {
-    for (let attempt = 0; attempt < 4; attempt++) {
+    // Outer attempts small — inner xfer already does OEM-style 5x300ms retries.
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const driver = activeDriver();
         const resp = await hid.xfer(driver.buildStatusQuery(), driver.getTransferOptions("status"));
@@ -505,7 +511,7 @@ export async function syncProfileFromDevice() {
   } catch {
     /* optional */
   }
-  await sleep(40);
+  await sleep(80);
 
   try {
     const raw = await xferGet(protocolDriver.buildGetDpi());
@@ -528,7 +534,7 @@ export async function syncProfileFromDevice() {
   } catch {
     /* optional */
   }
-  await sleep(40);
+  await sleep(80);
 
   try {
     const raw = await xferGet(protocolDriver.buildGetKeymap());
@@ -548,7 +554,7 @@ export async function syncProfileFromDevice() {
   } catch {
     /* optional */
   }
-  await sleep(40);
+  await sleep(80);
 
   try {
     const raw = await xferGet(protocolDriver.buildGetSensor());
@@ -560,7 +566,7 @@ export async function syncProfileFromDevice() {
   } catch {
     /* optional */
   }
-  await sleep(40);
+  await sleep(80);
 
   try {
     const raw = await xferGet(protocolDriver.buildGetLight());
@@ -583,7 +589,7 @@ export async function syncProfileFromDevice() {
   } catch {
     /* optional */
   }
-  await sleep(40);
+  await sleep(80);
 
   saveState();
   renderAll();

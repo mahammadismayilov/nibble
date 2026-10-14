@@ -38,6 +38,9 @@ export class NibbleHid {
     this.lastRx = null;
     this.isNativeTauri = false;
     this._nativeInfo = null;
+    // OEM single-flight (FUN_0044af10 busy flag): serialize all transfers
+    // so battery polls cannot steal write ACKs.
+    this._queue = Promise.resolve();
   }
 
   get connected() {
@@ -263,11 +266,35 @@ export class NibbleHid {
    * @param {{timeoutMs?:number, retries?:number, exact?:boolean, preferStrip1?:boolean}} opts
    *   exact: do not recompute checksum; send bytes as-is (for capture replay)
    */
+  /**
+   * Queued entry point — OEM allows only one outstanding overlapped I/O
+   * (FUN_0044af10). Without this, battery polls steal write ACKs.
+   */
   async xfer(windowsBuf, opts = {}) {
+    const run = () => this._xferInternal(windowsBuf, opts);
+    // Chain onto queue; preserve chain on failure.
+    const p = this._queue.then(run, run);
+    this._queue = p.catch(() => {});
+    return p;
+  }
+
+  /** Cancel pending waiters — WebHID equivalent of CancelIo on timeout. */
+  _cancelPendingWaiters() {
+    for (const w of this._waiters.splice(0)) {
+      try {
+        clearTimeout(w.timer);
+      } catch (_) {}
+      try {
+        w.reject(new Error("HID read timeout"));
+      } catch (_) {}
+    }
+  }
+
+  async _xferInternal(windowsBuf, opts = {}) {
     if (!this.connected) throw new Error("Not connected");
 
-    const timeoutMs = opts.timeoutMs ?? 1200;
-    const retries = opts.retries ?? 2;
+    const timeoutMs = opts.timeoutMs ?? 350;
+    const retries = opts.retries ?? 3;
     const exact = opts.exact === true;
 
     // Normalize to 33-byte Windows form (leading 0x00)
@@ -327,24 +354,14 @@ export class NibbleHid {
               this._onReport(rx, rxCmd);
             }
 
-            // Accept exact-mode responses or plausible ACKs (0xC0 is the expected ACK for status query!)
-            if (exact || isPlausibleAck(rx, packet)) {
-              return rx;
-            }
-
-            // Accept if the response command matches what we sent
-            if (rxCmd === cmd) {
+            // Accept exact-mode responses or strict OEM ACKs.
+            if (exact || isStrictAck(rx, packet)) {
               return rx;
             }
 
             // Unsolicited status/button reports while waiting for a non-status command: continue reading
             if (rxCmd === 0xC0 || rxCmd === 0xC2) {
               continue;
-            }
-
-            // Accept any non-trivial response
-            if (rx.some((b) => b !== 0)) {
-              return rx;
             }
           } catch (e) {
             this.lastError = e;
@@ -358,13 +375,13 @@ export class NibbleHid {
       throw new Error("No response from mouse (native HID)");
     }
 
-    // Capture-proven path: strip1 only (32-byte HID data like Wireshark "HID Data")
-    // full33 as fallback if strip1 throws
+    // OEM (FUN_0044ae30): single frame padded to caps length — not a probe
+    // of 4+ modes per retry. Once frameMode is learned, lock to it.
     const preferStrip =
       opts.preferStrip1 !== false &&
       (this.frameMode === "strip1" || this.frameMode === null || exact);
 
-    const attempts = preferStrip
+    const allAttempts = preferStrip
       ? [
           { name: "strip1", reportId: 0, body: packet.slice(1) },
           { name: "full33", reportId: 0, body: packet },
@@ -373,6 +390,11 @@ export class NibbleHid {
           { name: "full33", reportId: 0, body: packet },
           { name: "strip1", reportId: 0, body: packet.slice(1) },
         ];
+    // Lock: if we already learned a working frame, only try that one.
+    const attempts =
+      this.frameMode && !exact
+        ? allAttempts.filter((a) => a.name === this.frameMode)
+        : allAttempts;
 
     let lastErr = null;
     let lastRx = null;
@@ -440,8 +462,8 @@ export class NibbleHid {
           lastRx = rx;
           lastMode = att.name;
           this.frameMode = att.name;
-          // Always accept a response for exact capture replay; device often echoes SET
-          if (exact || isPlausibleAck(rx, packet)) {
+          // Strict OEM ACK; unsolicited C0/C2 drained by _handleInput path.
+          if (exact || isStrictAck(rx, packet)) {
             return rx;
           }
         } catch (e) {
@@ -461,6 +483,48 @@ export class NibbleHid {
       return lastRx;
     }
 
+    // OEM FUN_00449340: Sleep(100) + one final retry before giving up.
+    if (!opts.allowNoReply && !exact) {
+      await sleep(100);
+      this._cancelPendingWaiters();
+      const att = attempts[0];
+      if (att) {
+        try {
+          await this.device.sendReport(att.reportId, att.body);
+          const rx = await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              this._waiters = this._waiters.filter((w) => w.timer !== timer);
+              reject(new Error("HID read timeout"));
+            }, Math.min(timeoutMs, 400));
+            this._waiters.push({
+              resolve: (v) => {
+                clearTimeout(timer);
+                resolve(v);
+              },
+              reject: (err) => {
+                clearTimeout(timer);
+                reject(err);
+              },
+              timer,
+            });
+          });
+          if (isStrictAck(rx, packet)) {
+            this.frameMode = att.name;
+            return rx;
+          }
+          lastRx = rx;
+          lastMode = att.name;
+        } catch (e) {
+          lastErr = e;
+          this.lastError = e;
+        }
+      }
+      if (lastRx && isStrictAck(lastRx, packet)) {
+        this.frameMode = lastMode;
+        return lastRx;
+      }
+    }
+
     // Last resort: fire-and-forget strip1
     if (exact || opts.allowNoReply) {
       try {
@@ -472,6 +536,7 @@ export class NibbleHid {
       }
     }
 
+    this._cancelPendingWaiters();
     throw new Error(lastErr?.message || "No response from mouse");
   }
 
@@ -690,18 +755,33 @@ function normalizeInput(reportId, data) {
   return p;
 }
 
-function isPlausibleAck(rx, tx) {
+/**
+ * OEM-strict ACK (FUN_00448d40): response byte[1]==0 or command echo.
+ * C0 status replies only count for STATUS queries — otherwise they are
+ * unsolicited and must be drained, not accepted.
+ */
+function isStrictAck(rx, tx) {
   if (!rx || rx.length < 2) return false;
-  if (rx[0] === 0xc0) return true;
-  if (rx[1] === 0x00) return true;
+  const cmd = tx[1];
+  const rxCmd = rx[0] === 0x00 ? rx[1] : rx[0];
+  // Exact command echo — primary OEM success signal.
+  if (rxCmd === cmd) return true;
+  // Generic zero ACK (OEM checks resp[1]==0).
+  if (rx[0] === 0x00 && rx[1] === 0x00) return true;
+  // C0 battery ACK only valid for STATUS queries.
+  if ((rx[0] === 0xc0 || (rx[0] === 0x00 && rx[1] === 0xc0)) && cmd === 0x10) return true;
+  return false;
+}
+
+function isPlausibleAck(rx, tx) {
+  if (isStrictAck(rx, tx)) return true;
+  if (!rx || rx.length < 2) return false;
+  // Legacy lenient fallback for GET echoes where firmware returns
+  // a different command byte but a structurally valid payload.
+  // Callers should prefer isStrictAck; this stays for compat.
   const cmd = tx[1];
   if (rx[0] === cmd || rx[1] === cmd) return true;
-  // GET light / rate / dpi — accept any non-empty payload
-  if ((tx[1] === 0x15 || tx[1] === 0x12 || tx[1] === 0x13) && rx.some((b, i) => i > 2 && b !== 0))
-    return true;
-  if (tx[1] === 0x05) return true;
-  // any non-trivial response after our write
-  if (rx.some((b) => b !== 0)) return true;
+  if (rx[1] === 0x00) return true;
   return false;
 }
 

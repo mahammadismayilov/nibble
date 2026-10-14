@@ -8,8 +8,8 @@ export class CompXDriver extends DriverPlugin {
   constructor(options = {}) {
     super("compx", "CompX-compatible Solution", [0x1d57, 0x248a, 0x249a], {
       allowNoReply: true,
-      timeoutMs: 900,
-      retries: 2,
+      timeoutMs: 350,
+      retries: 3,
       preferStrip1: true,
       ...options,
     });

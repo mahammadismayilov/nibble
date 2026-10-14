@@ -54,13 +54,16 @@ export class DriverPlugin {
 
   /**
    * Returns WebHID transfer options tailored to this hardware driver & scope.
+   * OEM (FUN_00448d40 / FUN_0044af10): status reads use short 30ms polls x10;
+   * WebHID needs longer but still short timeouts with more retries, not 1200ms x2.
    */
   getTransferOptions(scope = "general", overrides = {}) {
+    const isRead = scope === "status" || scope === "read";
     return {
-      timeoutMs: this.options.timeoutMs,
-      retries: this.options.retries,
+      timeoutMs: isRead ? 300 : this.options.timeoutMs,
+      retries: isRead ? 5 : this.options.retries,
       preferStrip1: this.options.preferStrip1,
-      allowNoReply: this.options.allowNoReply,
+      allowNoReply: isRead ? false : this.options.allowNoReply,
       ...overrides,
     };
   }

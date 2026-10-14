@@ -9,7 +9,7 @@ export class YichipDriver extends DriverPlugin {
     super("yichip", "Yichip Solution", [0x3151], {
       allowNoReply: true, // Yichip receivers do not send ACK reports for setting writes
       timeoutMs: 500,
-      retries: 2,
+      retries: 3,
       preferStrip1: true,
       ...options,
     });

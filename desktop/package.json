@@ -1,6 +1,6 @@
 {
   "name": "nibble-desktop",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "description": "Nibble Native Desktop Companion — WebHID Mouse Configuration & System Tray Battery Meter",
   "main": "index.html",
   "type": "module",
