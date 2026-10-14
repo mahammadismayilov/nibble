@@ -38,6 +38,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            desktop/src-tauri/target/release/nibble-desktop.exe
-            desktop/dist/**
+          files: desktop/src-tauri/target/release/nibble-desktop.exe
