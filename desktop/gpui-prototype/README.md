@@ -2,7 +2,7 @@
 
 An isolated interface preview for AJ179 / AJ179P CompX receivers. By default it
 reads battery, DPI, polling rate, and supported lighting, keymap, and sensor states
-without changing settings. It does not replace the desktop app or save profiles. Close other mouse software before
+without changing settings. It does not replace the desktop app. Close other mouse software before
 testing because concurrent HID reads can interfere.
 
 Build and run on Windows with a Rust MSVC toolchain and the Windows SDK:
@@ -14,6 +14,12 @@ cargo run --release
 The prototype reports one snapshot and closes the HID handle. Use Refresh to
 read again. It does not continuously poll or reconnect. Appearance selection is
 saved separately from the original desktop app.
+
+AJ179 / AJ179P profiles can be imported and exported in the original app's JSON
+format. Profiles and local preferences are stored separately from the Tauri app.
+Selecting or importing a profile currently updates local state only; it does not
+apply the profile to the mouse. Profile settings are not yet synchronized with
+all controls, and other mouse models are not supported by this preview.
 
 For visual comparisons without accessing a receiver, run the executable with
 `--demo`. This mode displays sample data and disables receiver scans.
