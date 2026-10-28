@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use gpui::{
-    App, Application, Bounds, Context, IntoElement, ParentElement, Render, Styled, Window,
+    App, AppContext, Application, Bounds, Context, IntoElement, ParentElement, Render, Styled, Window,
     WindowBounds, WindowOptions, div, px, rgb, size,
 };
 use hidapi::HidApi;
