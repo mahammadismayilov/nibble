@@ -241,7 +241,7 @@ pub fn set_lighting(snapshot: &Readout, change: LightChange) -> Result<Lighting,
         .ok_or("Lighting change was sent, but the mouse did not confirm it. Refresh before trying again.")?;
     let expected_speed_wire = ((u16::from(light.speed - 1) * 4 + 4) / 9) as u8;
     let expected_speed = 1 + (expected_speed_wire * 9 + 2) / 4;
-    if readback.mode != light.mode || (light.mode != LightMode::Off && readback.brightness != light.brightness)
+    if readback.mode != light.mode || (light.mode != LightMode::Off && (readback.brightness != light.brightness || readback.color != light.color))
         || (light.mode == LightMode::Breathing && readback.speed != expected_speed) {
         return Err("The mouse returned different lighting settings. Refresh before trying again.".into());
     }
