@@ -1,7 +1,7 @@
 use crate::device::{self, LightChange, LightMode, Lighting, Readout, Sensor, SensorChange};
 use crate::profile::{self, Profiles};
 use gpui::{
-    Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, Render, ScrollHandle, StyledImage,
+    Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, PathPromptOptions, Render, ScrollHandle, StyledImage,
     Window, div, img, point, prelude::*, px, relative, rgb,
 };
 use std::sync::Arc;
@@ -49,6 +49,8 @@ pub struct Nibble {
     selected_key: usize,
     content_scroll: ScrollHandle,
     profiles: Profiles,
+    profiles_writable: bool,
+    show_profiles: bool,
     mouse: Arc<Image>,
     logo: Arc<Image>,
 }
@@ -56,15 +58,15 @@ pub struct Nibble {
 impl Nibble {
     pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool) -> Self {
         if !demo { Self::scan(cx); }
-        let (profiles, profile_error) = if demo {
-            (Profiles::new(), None)
+        let (profiles, profile_error, profiles_writable) = if demo {
+            (Profiles::new(), None, true)
         } else if let Some(path) = profile::profile_path() {
             match Profiles::load(&path) {
-                Ok(profiles) => (profiles, None),
-                Err(error) => (Profiles::new(), Some(format!("{error}. Saved files were not changed."))),
+                Ok(profiles) => (profiles, None, true),
+                Err(error) => (Profiles::new(), Some(format!("{error}. Saved files were not changed.")), false),
             }
         } else {
-            (Profiles::new(), Some("Could not locate the profile folder.".into()))
+            (Profiles::new(), Some("Could not locate the profile folder.".into()), false)
         };
         let readout = demo.then(|| Readout {
             battery: Some(80),
@@ -95,6 +97,8 @@ impl Nibble {
             selected_key: 0,
             content_scroll: ScrollHandle::new(),
             profiles,
+            profiles_writable,
+            show_profiles: false,
             mouse: Arc::new(Image::from_bytes(
                 ImageFormat::Png,
                 include_bytes!("../../../webapp/assets/device/mouse_aj179.png").to_vec(),
@@ -131,6 +135,76 @@ impl Nibble {
             }
         }
         cx.notify();
+    }
+
+    fn save_profiles(&self) -> Result<(), String> {
+        if self.demo { return Ok(()); }
+        if !self.profiles_writable { return Err("Saved profiles could not be loaded; the file was not changed.".into()); }
+        let path = profile::profile_path().ok_or("Could not locate the profile folder")?;
+        self.profiles.save(&path)
+    }
+
+    fn select_profile(&mut self, index: usize, cx: &mut Context<Self>) {
+        let previous = self.profiles.clone();
+        let result = self.profiles.select(index).and_then(|_| self.save_profiles());
+        if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
+        else { self.message = Some("Profile selected locally. Mouse settings were not changed.".into()); }
+        self.show_profiles = false;
+        cx.notify();
+    }
+
+    fn import_profile(&mut self, cx: &mut Context<Self>) {
+        if !self.profiles_writable { self.message = Some("Saved profiles could not be loaded; import is disabled.".into()); cx.notify(); return; }
+        let picker = cx.prompt_for_paths(PathPromptOptions { files: true, directories: false, multiple: false, prompt: Some("Import profile".into()) });
+        cx.spawn(async move |view, cx| {
+            let result = picker.await;
+            let _ = view.update(cx, |view, cx| {
+                let path = match result {
+                    Ok(Ok(Some(paths))) => paths.into_iter().next(),
+                    Ok(Ok(None)) => return,
+                    Ok(Err(error)) => { view.message = Some(format!("Could not open profile: {error}")); cx.notify(); return; }
+                    Err(error) => { view.message = Some(format!("Profile picker failed: {error}")); cx.notify(); return; }
+                };
+                if let Some(path) = path {
+                    let previous = view.profiles.clone();
+                    let result = std::fs::metadata(&path).map_err(|e| e.to_string()).and_then(|meta| {
+                        if meta.len() > 1_048_576 { Err("Profile file is too large".into()) }
+                        else { std::fs::read_to_string(&path).map_err(|e| e.to_string()) }
+                    }).and_then(|data| view.profiles.import(&data)).and_then(|_| view.save_profiles());
+                    match result {
+                        Ok(()) => view.message = Some("Profile imported locally. Mouse settings were not changed.".into()),
+                        Err(error) => { view.profiles = previous; view.message = Some(format!("Could not import profile: {error}")); }
+                    }
+                    cx.notify();
+                }
+            });
+        }).detach();
+    }
+
+    fn export_profile(&mut self, cx: &mut Context<Self>) {
+        let Some(directory) = profile::profile_path().and_then(|path| path.parent().map(|p| p.to_path_buf())) else {
+            self.message = Some("Could not locate the profile folder.".into()); cx.notify(); return;
+        };
+        let directory = if directory.exists() { directory } else { std::env::temp_dir() };
+        let picker = cx.prompt_for_new_path(&directory, Some("nibble-profile.json"));
+        cx.spawn(async move |view, cx| {
+            let result = picker.await;
+            let _ = view.update(cx, |view, cx| {
+                let path = match result {
+                    Ok(Ok(Some(path))) => path,
+                    Ok(Ok(None)) => return,
+                    Ok(Err(error)) => { view.message = Some(format!("Could not export profile: {error}")); cx.notify(); return; }
+                    Err(error) => { view.message = Some(format!("Profile picker failed: {error}")); cx.notify(); return; }
+                };
+                let result = view.profiles.export_current().and_then(|text| {
+                    use std::io::Write;
+                    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(path).map_err(|e| e.to_string())?;
+                    file.write_all(text.as_bytes()).map_err(|e| e.to_string())
+                });
+                view.message = Some(match result { Ok(()) => "Profile exported.".into(), Err(error) => format!("Could not export profile: {error}") });
+                cx.notify();
+            });
+        }).detach();
     }
 
     fn select_dpi(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -418,6 +492,13 @@ impl Nibble {
             "Disconnected · Connect mouse receiver to configure".into()
         };
         let battery = self.readout.as_ref().and_then(|data| data.battery).map(|value| format!("{value}%")).unwrap_or_else(|| "—".into());
+        let mut profile_menu = div().absolute().top(px(40.0)).right(px(0.0)).w(px(180.0)).rounded(px(8.0)).bg(rgb(p.card)).p(px(5.0)).flex().flex_col();
+        if self.show_profiles {
+            for (index, name) in self.profiles.names().into_iter().enumerate() {
+                profile_menu = profile_menu.child(div().id(("profile-option", index)).cursor_pointer().rounded(px(6.0)).px(px(10.0)).py(px(8.0)).child(name.to_string())
+                    .on_click(cx.listener(move |this, _, _, cx| this.select_profile(index, cx))));
+            }
+        }
         let mut tabs = div().flex().items_center().gap(px(4.0)).h(px(50.0));
         for (index, label) in TABS.iter().enumerate() {
             let selected = self.screen == index;
@@ -446,7 +527,10 @@ impl Nibble {
                     .child(if self.demo { "Demo" } else if self.scanning { "Checking…" } else { "Refresh" })
                     .on_click(cx.listener(|this, _, _, cx| { if !this.demo && !this.scanning && !this.applying { this.scanning = true; this.message = None; Self::scan(cx); cx.notify(); } })))
                 .child(div().text_color(rgb(p.muted)).text_size(px(12.0)).child(format!("▰  {battery}")))
-                .child(div().font_weight(FontWeight::SEMIBOLD).child(format!("{}  ⌄", self.profiles.current()["name"].as_str().unwrap_or("Profile"))))
+                .child(div().relative().font_weight(FontWeight::SEMIBOLD)
+                    .child(div().id("profile-menu").cursor_pointer().child(format!("{}  ⌄", self.profiles.current()["name"].as_str().unwrap_or("Profile")))
+                        .on_click(cx.listener(|this, _, _, cx| { this.show_profiles = !this.show_profiles; cx.notify(); })))
+                    .child(profile_menu))
                 .child(div().id("theme").cursor_pointer().rounded(px(8.0)).px(px(9.0)).py(px(7.0)).text_size(px(18.0))
                     .child(if self.dark { "☼" } else { "☾" })
                     .on_click(cx.listener(|this, _, _, cx| { this.set_theme(!this.dark, cx); })))
@@ -727,7 +811,14 @@ impl Nibble {
                         .bg(rgb(if self.dark { p.hover } else { p.inset })).child("Dark")
                         .on_click(cx.listener(|this, _, _, cx| this.set_theme(true, cx))))))
             .child(field(p, "Left-click lock", "Prevents accidental rebinding of LMB", "—"))
-            .child(field(p, "Profile backup", "Save or load this profile as a JSON file", "Export    Import"))
+            .child(div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
+                .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Profile backup"))
+                    .child(muted(p, "Save or load this profile as a JSON file")))
+                .child(div().flex().gap(px(8.0))
+                    .child(div().id("profile-export").cursor_pointer().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0)).child("Export")
+                        .on_click(cx.listener(|this, _, _, cx| this.export_profile(cx))))
+                    .child(div().id("profile-import").cursor_pointer().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0)).child("Import")
+                        .on_click(cx.listener(|this, _, _, cx| this.import_profile(cx))))))
             .child(muted(p, "Restore factory settings"));
         let experimental = card(p).mt(px(12.0)).child(heading("Experimental Features"))
             .child(muted(p, "Software-level unlocks that bypass OEM app limitations."))

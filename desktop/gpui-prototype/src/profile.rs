@@ -15,7 +15,7 @@ pub fn default_profile() -> Value {
     })
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Profiles { document: Value }
 
 impl Profiles {
@@ -37,6 +37,17 @@ impl Profiles {
 
     pub fn current(&self) -> &Value {
         &self.document["profiles"][self.document["profileIndex"].as_u64().unwrap_or(0) as usize]
+    }
+
+    pub fn names(&self) -> Vec<&str> {
+        self.document["profiles"].as_array().into_iter().flatten()
+            .filter_map(|profile| profile["name"].as_str()).collect()
+    }
+
+    pub fn select(&mut self, index: usize) -> Result<(), String> {
+        if index >= self.names().len() { return Err("Profile selection is invalid".into()); }
+        self.document["profileIndex"] = json!(index);
+        Ok(())
     }
 
     pub fn import(&mut self, input: &str) -> Result<(), String> {
