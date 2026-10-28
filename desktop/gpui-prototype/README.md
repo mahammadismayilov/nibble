@@ -17,7 +17,7 @@ read again. It does not continuously poll or reconnect.
 For visual comparisons without accessing a receiver, run the executable with
 `--demo`. This mode displays sample data and disables receiver scans.
 
-`--experimental-write` enables the DPI-stage and report-rate selectors. The
+`--experimental-write` enables DPI-level, active-stage, and report-rate selectors. The
 app reads the current settings before sending a change and checks the response
 afterward. These writes have packet tests but have not yet been tested on a
 physical mouse. Other settings are still previews.

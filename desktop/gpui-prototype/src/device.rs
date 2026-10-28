@@ -54,15 +54,30 @@ fn open_original_mouse(snapshot: &Readout) -> Result<(HidApi, HidDevice), String
 }
 
 pub fn set_active_dpi(snapshot: &Readout, index: usize) -> Result<(usize, usize, Vec<u16>), String> {
+    set_dpi(snapshot, DpiChange::Active(index))
+}
+
+pub fn set_dpi_count(snapshot: &Readout, count: usize) -> Result<(usize, usize, Vec<u16>), String> {
+    set_dpi(snapshot, DpiChange::Count(count))
+}
+
+enum DpiChange { Active(usize), Count(usize) }
+
+fn set_dpi(snapshot: &Readout, change: DpiChange) -> Result<(usize, usize, Vec<u16>), String> {
     let (_api, mouse) = open_original_mouse(snapshot)?;
-    let (_, count, stages) = query(&mouse, 0x13)
+    let (current, current_count, stages) = query(&mouse, 0x13)
         .and_then(|reply| parse_dpi(&reply))
         .ok_or("Could not read the full DPI table. No settings were sent.")?;
-    let packet = dpi_packet(&stages, index, count)?;
+    let (active, count) = match change {
+        DpiChange::Active(index) => (index, current_count),
+        DpiChange::Count(count) if (1..=6).contains(&count) => (current.min(count - 1), count),
+        DpiChange::Count(_) => return Err("Unsupported DPI level count. No settings were sent.".into()),
+    };
+    let packet = dpi_packet(&stages, active, count)?;
     send_setting(&mouse, &packet)?;
     let readback = query(&mouse, 0x13).and_then(|reply| parse_dpi(&reply))
         .ok_or("DPI change was sent, but the mouse did not confirm it. Refresh before trying again.")?;
-    if readback.0 != index || readback.1 != count || readback.2 != stages {
+    if readback.0 != active || readback.1 != count || readback.2 != stages {
         return Err("The mouse returned different DPI settings. Refresh before trying again.".into());
     }
     Ok(readback)

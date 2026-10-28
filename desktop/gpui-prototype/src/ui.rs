@@ -95,17 +95,38 @@ impl Nibble {
     }
 
     fn select_dpi(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.update_dpi(index, false, cx);
+    }
+
+    fn select_dpi_count(&mut self, count: usize, cx: &mut Context<Self>) {
+        self.update_dpi(count, true, cx);
+    }
+
+    fn update_dpi(&mut self, value: usize, is_count: bool, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
+        if self.readout.as_ref().is_some_and(|data| {
+            if is_count { data.dpi_count == Some(value) } else { data.active_dpi == Some(value) }
+        }) { return; }
         if self.demo {
-            if let Some(data) = &mut self.readout { data.active_dpi = Some(index); }
+            if let Some(data) = &mut self.readout {
+                if is_count {
+                    data.dpi_count = Some(value);
+                    data.active_dpi = data.active_dpi.map(|index| index.min(value - 1));
+                } else {
+                    data.active_dpi = Some(value);
+                }
+            }
             cx.notify();
             return;
         }
         if !self.experimental_write { return; }
         let Some(snapshot) = self.readout.clone() else { return; };
         self.applying = true;
-        self.message = Some("Applying DPI stage…".into());
-        let work = cx.background_executor().spawn(async move { device::set_active_dpi(&snapshot, index) });
+        self.message = Some("Applying DPI settings…".into());
+        let work = cx.background_executor().spawn(async move {
+            if is_count { device::set_dpi_count(&snapshot, value) }
+            else { device::set_active_dpi(&snapshot, value) }
+        });
         cx.spawn(async move |view, cx| {
             let result = work.await;
             let _ = view.update(cx, |view, cx| {
@@ -117,7 +138,7 @@ impl Nibble {
                             data.dpi_count = Some(count);
                             data.dpi = stages;
                         }
-                        view.message = Some("DPI stage confirmed by receiver.".into());
+                        view.message = Some("DPI settings confirmed by receiver.".into());
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout {
@@ -136,6 +157,7 @@ impl Nibble {
 
     fn select_rate(&mut self, rate: u16, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
+        if self.readout.as_ref().and_then(|data| data.rate) == Some(rate) { return; }
         if self.demo {
             if let Some(data) = &mut self.readout { data.rate = Some(rate); }
             cx.notify();
@@ -261,12 +283,16 @@ impl Nibble {
                 let position = dpi_position(*value);
                 let active = data.active_dpi == Some(i);
                 let color = if self.demo { STAGE_COLORS[i] } else { p.accent };
-                track = track
-                    .child(div().absolute().left(relative(position)).top(px(0.0)).ml(px(-20.0))
-                        .text_size(px(18.0)).font_weight(FontWeight::BOLD)
-                        .text_color(rgb(if active { color } else { p.text })).child(value.to_string()))
-                    .child(div().absolute().left(relative(position)).top(px(36.0)).ml(px(-6.0)).size(px(12.0))
-                        .rounded_full().bg(rgb(if active { color } else { p.text })));
+                let mut number = div().id(("dpi-number", i)).absolute().left(relative(position)).top(px(0.0)).ml(px(-20.0))
+                    .text_size(px(18.0)).font_weight(FontWeight::BOLD)
+                    .text_color(rgb(if active { color } else { p.text })).child(value.to_string());
+                let mut dot = div().id(("dpi-node", i)).absolute().left(relative(position)).top(px(36.0)).ml(px(-6.0)).size(px(12.0))
+                    .rounded_full().bg(rgb(if active { color } else { p.text }));
+                if dpi_editable {
+                    number = number.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_dpi(i, cx)));
+                    dot = dot.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_dpi(i, cx)));
+                }
+                track = track.child(number).child(dot);
             }
         }
         let mut scale = div().relative().w_full().h(px(25.0)).text_size(px(12.0)).text_color(rgb(p.muted));
@@ -278,9 +304,13 @@ impl Nibble {
         let mut level_buttons = div().flex().rounded(px(8.0)).bg(rgb(p.inset)).p(px(4.0));
         for level in 1..=6 {
             let selected = data.and_then(|d| d.dpi_count) == Some(level);
-            level_buttons = level_buttons.child(div().w(px(31.0)).h(px(32.0)).rounded(px(5.0)).flex().items_center().justify_center()
+            let mut button = div().id(("dpi-count", level)).w(px(31.0)).h(px(32.0)).rounded(px(5.0)).flex().items_center().justify_center()
                 .bg(rgb(if selected { p.hover } else { p.inset }))
-                .text_color(rgb(if selected { p.accent } else { p.muted })).child(level.to_string()));
+                .text_color(rgb(if selected { p.accent } else { p.muted })).child(level.to_string());
+            if dpi_editable {
+                button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_dpi_count(level, cx)));
+            }
+            level_buttons = level_buttons.child(button);
         }
         let levels = div().flex().items_center().gap(px(8.0)).text_size(px(12.0)).text_color(rgb(p.muted)).child("DPI Levels:").child(level_buttons);
         let selected_value = data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i)))
@@ -334,21 +364,28 @@ impl Nibble {
                 .child(callout(p, "Forward · —", 10.0, 206.0))
                 .child(callout(p, "Backward · —", 0.0, 265.0))
                 .child(callout(p, "DPI Button · —", 265.0, 265.0)));
-        let mut functions = div().flex().flex_col().gap(px(8.0));
-        for pair in [["Left-Click", "Right-Click"], ["Middle-Click", "Forward"], ["Backward", "Double-Click"], ["Scroll Up", "Scroll Down"], ["DPI Loop", "Fire button"], ["Disable Key", ""]] {
-            let mut row = div().flex().gap(px(8.0));
-            for label in pair {
-                row = row.child(div().flex_1().rounded(px(8.0)).px(px(12.0)).py(px(11.0)).bg(rgb(p.inset)).child(label));
+        let groups: [(&str, &[&str]); 4] = [
+            ("MOUSE FEATURES", &["Left-Click", "Right-Click", "Middle-Click", "Forward", "Backward", "Double-Click", "Scroll Up", "Scroll Down", "DPI Loop", "Fire button", "Disable Key"]),
+            ("MULTIMEDIA", &["Volume +", "Volume -", "Mute", "Play/Pause", "Previous", "Next", "Stop"]),
+            ("SYSTEM SHORTCUT", &["Calculator", "My Computer", "Mail", "Refresh (F5)", "Switch Application", "Copy", "Paste", "Screen Brightness +", "Screen Brightness -"]),
+            ("LIGHTING / MACRO", &["Lighting on/off", "Macro"]),
+        ];
+        let mut functions = div().id("key-functions").flex_1().min_h(px(0.0)).overflow_y_scroll().flex().flex_col().gap(px(14.0));
+        for (title, items) in groups {
+            let mut group = div().flex().flex_col().gap(px(6.0)).child(muted(p, title));
+            for pair in items.chunks(2) {
+                let mut row = div().flex().gap(px(6.0));
+                for label in pair {
+                    row = row.child(div().flex_1().rounded(px(8.0)).px(px(12.0)).py(px(11.0)).bg(rgb(p.inset)).child(*label));
+                }
+                group = group.child(row);
             }
-            functions = functions.child(row);
+            functions = functions.child(group);
         }
         let right = card(p).flex_1().h(px(620.0)).flex().flex_col().gap(px(10.0))
             .child(heading("Button Function"))
             .child(div().rounded(px(8.0)).p(px(12.0)).bg(rgb(p.accent_soft)).text_color(rgb(p.accent)).child("Select a button"))
-            .child(muted(p, "MOUSE FEATURES"))
-            .child(functions)
-            .child(muted(p, "MULTIMEDIA"))
-            .child(div().flex().gap(px(8.0)).child(static_button(p, "Volume +")).child(static_button(p, "Volume -")));
+            .child(functions);
         div().flex().gap(px(16.0)).child(left).child(right)
     }
 
@@ -417,7 +454,11 @@ impl Nibble {
                 .child(info_tile(p, "Version", "1.0.1.4")).child(info_tile(p, "Build date", "2024.01.04"))
                 .child(info_tile(p, "Method", "Static analysis + USB captures")));
         let capabilities = card(p).mt(px(16.0)).child(heading("What works"))
-            .child(muted(p, "This GPUI preview reads battery, DPI stages, and polling rate. Mouse settings cannot be changed yet."));
+            .child(muted(p, if self.experimental_write {
+                "Experimental controls can change DPI levels, the active stage, and report rate. Other settings are previews."
+            } else {
+                "This GPUI preview reads battery, DPI stages, and polling rate. Mouse settings cannot be changed."
+            }));
         let privacy = card(p).mt(px(16.0)).child(heading("Privacy"))
             .child(muted(p, "This preview does not send telemetry."));
         div().flex().justify_center().child(div().w(px(720.0)).child(hero).child(derived).child(capabilities).child(privacy))
@@ -436,7 +477,7 @@ impl Render for Nibble {
             else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
             else if let Some(message) = &self.message { message.clone() }
-            else if self.experimental_write { "Experimental mode · DPI stage and report rate can change the receiver. Close other mouse software.".into() }
+            else if self.experimental_write { "Experimental mode · DPI levels, active stage, and report rate can change the receiver. Close other mouse software.".into() }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
         div().size_full().bg(rgb(p.bg)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
             .flex().flex_col().px(px(20.0)).pt(px(8.0))
