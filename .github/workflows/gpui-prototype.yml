@@ -1,0 +1,27 @@
+name: Build GPUI prototype
+
+on:
+  push:
+    branches: [codex/gpui-prototype]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/gpui-prototype
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build prototype
+        run: cargo build --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nibble-gpui-prototype-windows
+          path: desktop/gpui-prototype/target/release/nibble-gpui-prototype.exe
+          if-no-files-found: error
+
