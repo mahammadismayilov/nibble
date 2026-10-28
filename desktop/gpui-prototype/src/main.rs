@@ -25,9 +25,9 @@ fn main() {
             eprintln!("Could not load interface fonts: {error}");
         }
         let display = cx.primary_display().map(|display| display.bounds().size);
-        let width = display.map(|size| size.width.as_f32().min(1100.0)).unwrap_or(1100.0);
-        let height = display.map(|size| size.height.as_f32().min(750.0)).unwrap_or(750.0);
-        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
+        let width = display.map(|size| size.width.min(px(1100.0))).unwrap_or(px(1100.0));
+        let height = display.map(|size| size.height.min(px(750.0))).unwrap_or(px(750.0));
+        let bounds = Bounds::centered(None, size(width, height), cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
