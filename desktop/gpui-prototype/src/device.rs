@@ -11,6 +11,7 @@ pub struct Readout {
     pub dpi_count: Option<usize>,
     pub rate: Option<u16>,
     pub lighting: Option<Lighting>,
+    pub sensor: Option<Sensor>,
     pub vid: u16,
     pub pid: u16,
     pub path: Vec<u8>,
@@ -25,6 +26,9 @@ pub struct Lighting {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LightMode { Off, Breathing, Constant }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Sensor { pub lod: u8, pub angle_snap: bool, pub ripple: bool }
 
 // Only GET requests are sent. The handle is closed when the scan finishes.
 pub fn read_mouse() -> Result<Readout, String> {
@@ -53,6 +57,9 @@ pub fn read_mouse() -> Result<Readout, String> {
     }
     if let Some(reply) = query(&mouse, 0x15) {
         result.lighting = parse_light(&reply);
+    }
+    if let Some(reply) = query(&mouse, 0x16) {
+        result.sensor = parse_sensor(&reply);
     }
     Ok(result)
 }
@@ -156,6 +163,7 @@ fn rate_packet(rate: u16) -> Result<[u8; 33], String> {
 fn query(device: &HidDevice, command: u8) -> Option<[u8; 33]> {
     let mut request = [0u8; 33];
     request[1] = command;
+    if command == 0x16 { request[3] = 1; }
     for _ in 0..5 {
         if device.write(&request).is_err() {
             continue;
@@ -198,8 +206,16 @@ fn matches_reply(command: u8, reply: &[u8; 33]) -> bool {
         0x12 => parse_rate(reply).is_some(),
         0x13 => parse_dpi(reply).is_some(),
         0x15 => parse_light(reply).is_some(),
+        0x16 => parse_sensor(reply).is_some(),
         _ => false,
     }
+}
+
+fn parse_sensor(buf: &[u8]) -> Option<Sensor> {
+    if buf.len() < 8 || buf[4] != 5 || !(1..=2).contains(&buf[5]) || buf[6] > 1 || buf[7] > 1 {
+        return None;
+    }
+    Some(Sensor { lod: buf[5], angle_snap: buf[6] == 1, ripple: buf[7] == 1 })
 }
 
 fn parse_light(buf: &[u8]) -> Option<Lighting> {
@@ -345,5 +361,16 @@ mod tests {
         assert_eq!(parse_light(&reply), None);
         reply[4] = 0;
         assert!(!matches_reply(0x15, &reply));
+    }
+
+    #[test]
+    fn rejects_unrecognised_sensor_readings() {
+        let mut reply = [0u8; 33];
+        reply[1] = 0x16;
+        reply[4..8].copy_from_slice(&[5, 2, 1, 0]);
+        assert_eq!(parse_sensor(&reply), Some(Sensor { lod: 2, angle_snap: true, ripple: false }));
+        assert!(matches_reply(0x16, &reply));
+        reply[6] = 2;
+        assert!(!matches_reply(0x16, &reply));
     }
 }

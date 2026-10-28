@@ -1,4 +1,4 @@
-use crate::device::{self, LightMode, Lighting, Readout};
+use crate::device::{self, LightMode, Lighting, Readout, Sensor};
 use gpui::{
     Context, Div, FontWeight, Image, ImageFormat, IntoElement, ObjectFit, Render, StyledImage,
     Window, div, img, prelude::*, px, relative, rgb,
@@ -56,6 +56,7 @@ impl Nibble {
             dpi_count: Some(6),
             rate: Some(1000),
             lighting: Some(Lighting { mode: LightMode::Breathing, brightness: 0, speed: 6 }),
+            sensor: Some(Sensor { lod: 1, angle_snap: false, ripple: false }),
             vid: 0x249a,
             pid: 0x5c2f,
             ..Default::default()
@@ -434,10 +435,14 @@ impl Nibble {
     }
 
     fn settings(&self, p: Palette, cx: &mut Context<Self>) -> Div {
+        let sensor = self.readout.as_ref().and_then(|data| data.sensor.as_ref());
+        let lod = match sensor.map(|s| s.lod) { Some(1) => "1mm", Some(2) => "2mm", _ => "—" };
+        let angle = sensor.map(|s| if s.angle_snap { "On" } else { "Off" }).unwrap_or("—");
+        let ripple = sensor.map(|s| if s.ripple { "On" } else { "Off" }).unwrap_or("—");
         let mouse = card(p).flex_1().child(heading("Mouse Settings"))
-            .child(field(p, "Lift Off Distance (LOD)", "1mm or 2mm", "1mm    2mm"))
-            .child(field(p, "Angle Snap", "Straighten out slight angle offsets", "—"))
-            .child(field(p, "Ripple Control", "Smooth cursor jitter at high DPIs", "—"))
+            .child(field(p, "Lift Off Distance (LOD)", "1mm or 2mm", lod))
+            .child(field(p, "Angle Snap", "Straighten out slight angle offsets", angle))
+            .child(field(p, "Ripple Control", "Smooth cursor jitter at high DPIs", ripple))
             .child(field(p, "Debounce Time", "ms · higher reduces double-clicks", "—"))
             .child(field(p, "High-Speed Mode", "Local only", "—"));
         let power = card(p).flex_1().child(heading("Power & Sleep"))
@@ -459,7 +464,7 @@ impl Nibble {
                         .on_click(cx.listener(|this, _, _, cx| this.set_theme(false, cx))))
                     .child(div().id("theme-dark").cursor_pointer().rounded(px(6.0)).px(px(12.0)).py(px(8.0))
                         .bg(rgb(if self.dark { p.hover } else { p.inset })).child("Dark")
-                        .on_click(cx.listener(|this, _, _, cx| this.set_theme(true, cx)))))
+                        .on_click(cx.listener(|this, _, _, cx| this.set_theme(true, cx))))))
             .child(field(p, "Left-click lock", "Prevents accidental rebinding of LMB", "—"))
             .child(field(p, "Profile backup", "Save or load this profile as a JSON file", "Export    Import"))
             .child(muted(p, "Restore factory settings"));
@@ -554,7 +559,7 @@ fn field(p: Palette, title: &'static str, subtitle: &'static str, value: &'stati
     let is_switch = matches!(title, "Angle Snap" | "Ripple Control" | "High-Speed Mode" | "Move wake-up" | "Move to turn off light" | "Left-click lock" | "50-Step DPI Granularity");
     let control = if is_switch {
         div().w(px(48.0)).h(px(28.0)).rounded_full().bg(rgb(p.hover)).flex().items_center().justify_center()
-            .text_color(rgb(p.muted)).child("—")
+            .text_color(rgb(if value == "On" { p.accent } else { p.muted })).child(value)
     } else {
         div().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0)).text_color(rgb(p.muted)).child(value)
     };
