@@ -1,6 +1,6 @@
 use crate::device::{self, LightMode, Lighting, Readout, Sensor, SensorChange};
 use gpui::{
-    Context, Div, FontWeight, Image, ImageFormat, IntoElement, ObjectFit, Render, StyledImage,
+    Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, Render, StyledImage,
     Window, div, img, prelude::*, px, relative, rgb,
 };
 use std::sync::Arc;
@@ -42,6 +42,9 @@ pub struct Nibble {
     readout: Option<Readout>,
     error: Option<String>,
     message: Option<String>,
+    dpi_focus: FocusHandle,
+    dpi_input: Option<String>,
+    dpi_replace_input: bool,
     mouse: Arc<Image>,
     logo: Arc<Image>,
 }
@@ -71,6 +74,9 @@ impl Nibble {
             readout,
             error: None,
             message: None,
+            dpi_focus: cx.focus_handle(),
+            dpi_input: None,
+            dpi_replace_input: false,
             mouse: Arc::new(Image::from_bytes(
                 ImageFormat::Png,
                 include_bytes!("../../../webapp/assets/device/mouse_aj179.png").to_vec(),
@@ -110,11 +116,80 @@ impl Nibble {
     }
 
     fn select_dpi(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.dpi_input = None;
         self.update_dpi(index, false, cx);
     }
 
     fn select_dpi_count(&mut self, count: usize, cx: &mut Context<Self>) {
+        self.dpi_input = None;
         self.update_dpi(count, true, cx);
+    }
+
+    fn edit_dpi(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        let Some(value) = self.readout.as_ref().and_then(|data| data.active_dpi.and_then(|i| data.dpi.get(i))) else { return; };
+        self.dpi_input = Some(value.to_string());
+        self.dpi_replace_input = true;
+        window.focus(&self.dpi_focus);
+        cx.notify();
+    }
+
+    fn handle_dpi_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        let Some(input) = self.dpi_input.as_mut() else { return; };
+        let key = event.keystroke.key.as_str();
+        if event.keystroke.modifiers.control && key.eq_ignore_ascii_case("a") {
+            self.dpi_replace_input = true;
+        } else if key == "escape" {
+            self.dpi_input = None;
+        } else if key == "enter" || key == "return" {
+            let value = input.parse::<u32>().ok().map(|value| ((value.min(26000) + 50) / 100 * 100).clamp(50, 26000) as u16);
+            self.dpi_input = None;
+            if let Some(value) = value { self.set_dpi_value(value, cx); }
+            else { self.message = Some("Enter a DPI value between 50 and 26000.".into()); }
+        } else if key == "backspace" {
+            if self.dpi_replace_input { input.clear(); self.dpi_replace_input = false; } else { input.pop(); }
+        } else if !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt {
+            let typed = event.keystroke.key_char.as_deref().unwrap_or(key);
+            if typed.len() == 1 && typed.as_bytes()[0].is_ascii_digit() {
+                if self.dpi_replace_input { input.clear(); self.dpi_replace_input = false; }
+                if input.len() < 5 { input.push_str(typed); }
+            }
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn set_dpi_value(&mut self, value: u16, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        let Some(index) = self.readout.as_ref().and_then(|data| data.active_dpi) else { return; };
+        if self.demo {
+            if let Some(data) = &mut self.readout { if let Some(stage) = data.dpi.get_mut(index) { *stage = value; } }
+            cx.notify();
+            return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Applying DPI value…".into());
+        let work = cx.background_executor().spawn(async move { device::set_dpi_value(&snapshot, index, value) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok((active, count, stages)) => {
+                        if let Some(data) = &mut view.readout { data.active_dpi = Some(active); data.dpi_count = Some(count); data.dpi = stages; }
+                        view.message = Some("DPI value confirmed by receiver.".into());
+                    }
+                    Err(error) => {
+                        if let Some(data) = &mut view.readout { data.active_dpi = None; data.dpi_count = None; data.dpi.clear(); }
+                        view.message = Some(error);
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
     }
 
     fn update_dpi(&mut self, value: usize, is_count: bool, cx: &mut Context<Self>) {
@@ -369,14 +444,20 @@ impl Nibble {
             level_buttons = level_buttons.child(button);
         }
         let levels = div().flex().items_center().gap(px(8.0)).text_size(px(12.0)).text_color(rgb(p.muted)).child("DPI Levels:").child(level_buttons);
-        let selected_value = data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i)))
-            .map(u16::to_string).unwrap_or_else(|| "—".into());
+        let selected_value = self.dpi_input.clone().or_else(|| data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i)))
+            .map(u16::to_string)).unwrap_or_else(|| "—".into());
         let selected_color = data.and_then(|d| d.active_dpi).filter(|_| self.demo)
             .and_then(|i| STAGE_COLORS.get(i)).copied().unwrap_or(p.muted);
+        let mut dpi_input = div().id("dpi-value").track_focus(&self.dpi_focus).w(px(90.0)).rounded(px(8.0)).bg(rgb(p.inset)).px(px(10.0)).py(px(10.0))
+            .font_family("JetBrains Mono").text_color(rgb(p.text)).child(selected_value);
+        if dpi_editable {
+            dpi_input = dpi_input.cursor_text()
+                .on_click(cx.listener(|this, _, window, cx| this.edit_dpi(window, cx)))
+                .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| this.handle_dpi_key(event, cx)));
+        }
         let fine_controls = div().flex().items_center().gap(px(12.0)).text_size(px(12.0)).text_color(rgb(p.muted))
             .child("DPI Value")
-            .child(div().w(px(90.0)).rounded(px(8.0)).bg(rgb(p.inset)).px(px(10.0)).py(px(10.0))
-                .font_family("JetBrains Mono").text_color(rgb(p.text)).child(selected_value))
+            .child(dpi_input)
             .child("LED Color")
             .child(div().size(px(26.0)).rounded(px(4.0)).bg(rgb(selected_color)));
         let hero = card(p).flex_1().h(px(520.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()

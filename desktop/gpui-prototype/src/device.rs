@@ -82,18 +82,36 @@ pub fn set_dpi_count(snapshot: &Readout, count: usize) -> Result<(usize, usize, 
     set_dpi(snapshot, DpiChange::Count(count))
 }
 
-enum DpiChange { Active(usize), Count(usize) }
+pub fn set_dpi_value(snapshot: &Readout, index: usize, value: u16) -> Result<(usize, usize, Vec<u16>), String> {
+    set_dpi(snapshot, DpiChange::Value(index, value))
+}
+
+enum DpiChange { Active(usize), Count(usize), Value(usize, u16) }
+
+fn apply_dpi_change(current: usize, current_count: usize, mut stages: Vec<u16>, change: DpiChange) -> Result<(usize, usize, Vec<u16>), String> {
+    if stages.len() != 6 || !(1..=6).contains(&current_count) || current >= current_count {
+        return Err("The DPI table is incomplete. No settings were sent.".into());
+    }
+    let (active, count) = match change {
+        DpiChange::Active(index) if index < current_count => (index, current_count),
+        DpiChange::Active(_) => return Err("Unsupported DPI stage. No settings were sent.".into()),
+        DpiChange::Count(count) if (1..=6).contains(&count) => (current.min(count - 1), count),
+        DpiChange::Count(_) => return Err("Unsupported DPI level count. No settings were sent.".into()),
+        DpiChange::Value(index, value) if index < current_count && (50..=26000).contains(&value) && value % 50 == 0 => {
+            stages[index] = value;
+            (current, current_count)
+        }
+        DpiChange::Value(_, _) => return Err("Unsupported DPI value. No settings were sent.".into()),
+    };
+    Ok((active, count, stages))
+}
 
 fn set_dpi(snapshot: &Readout, change: DpiChange) -> Result<(usize, usize, Vec<u16>), String> {
     let (_api, mouse) = open_original_mouse(snapshot)?;
     let (current, current_count, stages) = query(&mouse, 0x13)
         .and_then(|reply| parse_dpi(&reply))
         .ok_or("Could not read the full DPI table. No settings were sent.")?;
-    let (active, count) = match change {
-        DpiChange::Active(index) => (index, current_count),
-        DpiChange::Count(count) if (1..=6).contains(&count) => (current.min(count - 1), count),
-        DpiChange::Count(_) => return Err("Unsupported DPI level count. No settings were sent.".into()),
-    };
+    let (active, count, stages) = apply_dpi_change(current, current_count, stages, change)?;
     let packet = dpi_packet(&stages, active, count)?;
     send_setting(&mouse, &packet)?;
     let readback = query(&mouse, 0x13).and_then(|reply| parse_dpi(&reply))
@@ -379,6 +397,16 @@ mod tests {
         assert_eq!(&rate[..6], &[0, 2, 0, 1, 1, 2]);
         assert_eq!(rate[32], 2);
         assert!(rate_packet(8000).is_err());
+    }
+
+    #[test]
+    fn editing_one_dpi_value_preserves_the_other_stages_and_count() {
+        let stages = vec![400, 800, 1200, 1600, 2400, 10000];
+        let (active, count, updated) = apply_dpi_change(5, 6, stages.clone(), DpiChange::Value(2, 1800)).unwrap();
+        assert_eq!((active, count), (5, 6));
+        assert_eq!(updated, vec![400, 800, 1800, 1600, 2400, 10000]);
+        assert!(apply_dpi_change(1, 2, stages.clone(), DpiChange::Value(2, 1800)).is_err());
+        assert!(apply_dpi_change(5, 6, stages, DpiChange::Value(2, 1801)).is_err());
     }
 
     #[test]
