@@ -24,10 +24,12 @@ all controls, and other mouse models are not supported by this preview.
 For visual comparisons without accessing a receiver, run the executable with
 `--demo`. This mode displays sample data and disables receiver scans.
 
-`--experimental-write` enables DPI, report-rate, sensor, keymap, and lighting
-controls. The app reads current settings before sending a change and checks the
-response afterward. A stage switch and restoration were tested on an AJ179P;
+`--experimental-write` enables DPI, report-rate, sensor, keymap, lighting, and power
+controls. For DPI, report rate, sensor, keymap, and lighting changes, the app
+reads current settings before sending a change and checks the response afterward.
+A stage switch and restoration were tested on an AJ179P;
 other writes have packet tests but have not been tested on physical hardware.
 Left-click remains locked. Lighting may require a previously read color to turn
 back on after the mouse reports an off state. Other settings are still previews.
+Power settings are sent from the selected profile without device readback.
 

@@ -1,4 +1,4 @@
-use crate::device::{self, LightMode, Readout};
+use crate::device::{self, LightMode, PowerSettings, Readout};
 use serde_json::{Value, json};
 use std::{fs, io::{self, Write}, path::{Path, PathBuf}};
 
@@ -59,6 +59,29 @@ impl Profiles {
         }
         let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
         self.document["profiles"][index]["settings"][key] = value;
+        Ok(())
+    }
+
+    pub fn power(&self) -> Option<PowerSettings> {
+        let settings = &self.current()["settings"];
+        let raw = settings["sleepWire"].as_u64()?;
+        let sleep = if [1, 3, 6, 12, 30, 60, 120, 180].contains(&raw) { raw }
+            else if (1..=30).contains(&raw) && [1, 3, 6, 12, 30, 60, 120, 180].contains(&(raw * 6)) { raw * 6 }
+            else { return None; };
+        let debounce = settings["debounce"].as_u64()?;
+        if debounce > 30 { return None; }
+        Some(PowerSettings { sleep_wire: sleep as u8, move_wake: settings["moveWake"].as_bool()?,
+            move_close_light: settings["moveCloseLight"].as_bool()?, debounce: debounce as u8 })
+    }
+
+    pub fn set_power(&mut self, power: &PowerSettings) -> Result<(), String> {
+        if ![1, 3, 6, 12, 30, 60, 120, 180].contains(&power.sleep_wire) || power.debounce > 30 {
+            return Err("Invalid power settings".into());
+        }
+        let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
+        let settings = &mut self.document["profiles"][index]["settings"];
+        settings["sleepWire"] = json!(power.sleep_wire); settings["moveWake"] = json!(power.move_wake);
+        settings["moveCloseLight"] = json!(power.move_close_light); settings["debounce"] = json!(power.debounce);
         Ok(())
     }
 
@@ -227,6 +250,9 @@ mod tests {
         assert_eq!(state.current()["dpiStages"][5]["color"], "#800080");
         assert_eq!(state.current()["settings"]["fineDpi"], true);
         assert_eq!(state.current()["settings"]["sleepWire"], 30);
+        let power = state.power().unwrap();
+        assert_eq!(power.sleep_wire, 30);
+        assert_eq!(power.debounce, 4);
     }
 
     #[test]

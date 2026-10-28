@@ -145,6 +145,27 @@ pub fn set_rate(snapshot: &Readout, rate: u16) -> Result<u16, String> {
 #[derive(Clone, Copy)]
 pub enum SensorChange { Lod(u8), AngleSnap(bool), Ripple(bool) }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PowerSettings { pub sleep_wire: u8, pub move_wake: bool, pub move_close_light: bool, pub debounce: u8 }
+
+pub fn set_power(snapshot: &Readout, power: &PowerSettings) -> Result<(), String> {
+    let packet = power_packet(power)?;
+    let (_api, mouse) = open_original_mouse(snapshot)?;
+    send_setting(&mouse, &packet)
+}
+
+fn power_packet(power: &PowerSettings) -> Result<[u8; 33], String> {
+    if ![1, 3, 6, 12, 30, 60, 120, 180].contains(&power.sleep_wire) || power.debounce > 30 {
+        return Err("Unsupported power settings. No settings were sent.".into());
+    }
+    let mut packet = [0u8; 33];
+    packet[1] = 7; packet[3] = 1; packet[4] = 4;
+    packet[5] = power.sleep_wire; packet[6] = u8::from(power.move_wake);
+    packet[7] = u8::from(power.move_close_light); packet[8] = power.debounce;
+    packet[32] = packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    Ok(packet)
+}
+
 pub fn set_sensor(snapshot: &Readout, change: SensorChange) -> Result<Sensor, String> {
     let (_api, mouse) = open_original_mouse(snapshot)?;
     let mut sensor = query(&mouse, 0x16).and_then(|reply| parse_sensor(&reply))
@@ -564,6 +585,16 @@ mod tests {
         let packet = sensor_packet(&Sensor { lod: 2, angle_snap: true, ripple: false });
         assert_eq!(&packet[..8], &[0, 6, 0, 1, 5, 2, 1, 0]);
         assert_eq!(packet[32], 3);
+    }
+
+    #[test]
+    fn power_packet_matches_existing_protocol_and_rejects_bad_values() {
+        let power = PowerSettings { sleep_wire: 30, move_wake: true, move_close_light: false, debounce: 4 };
+        let packet = power_packet(&power).unwrap();
+        assert_eq!(&packet[..9], &[0, 7, 0, 1, 4, 30, 1, 0, 4]);
+        assert_eq!(packet[32], 35);
+        assert!(power_packet(&PowerSettings { sleep_wire: 2, ..power.clone() }).is_err());
+        assert!(power_packet(&PowerSettings { debounce: 31, ..power }).is_err());
     }
 
     #[test]

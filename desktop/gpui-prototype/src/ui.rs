@@ -1,4 +1,4 @@
-use crate::device::{self, LightChange, LightMode, Lighting, Readout, Sensor, SensorChange};
+use crate::device::{self, LightChange, LightMode, Lighting, PowerSettings, Readout, Sensor, SensorChange};
 use crate::profile::{self, Profiles};
 use gpui::{
     Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, PathPromptOptions, Render, ScrollHandle, StyledImage,
@@ -164,6 +164,7 @@ impl Nibble {
     }
 
     fn select_profile(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { self.message = Some("Wait until the current device operation finishes.".into()); cx.notify(); return; }
         let previous = self.profiles.clone();
         let result = self.profiles.select(index).and_then(|_| self.save_profiles());
         if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
@@ -181,11 +182,13 @@ impl Nibble {
     }
 
     fn import_profile(&mut self, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { self.message = Some("Wait until the current device operation finishes.".into()); cx.notify(); return; }
         if !self.profiles_writable { self.message = Some("Saved profiles could not be loaded; import is disabled.".into()); cx.notify(); return; }
         let picker = cx.prompt_for_paths(PathPromptOptions { files: true, directories: false, multiple: false, prompt: Some("Import profile".into()) });
         cx.spawn(async move |view, cx| {
             let result = picker.await;
             let _ = view.update(cx, |view, cx| {
+                if view.scanning || view.applying { view.message = Some("Wait until the current device operation finishes, then import again.".into()); cx.notify(); return; }
                 let path = match result {
                     Ok(Ok(Some(paths))) => paths.into_iter().next(),
                     Ok(Ok(None)) => return,
@@ -429,6 +432,38 @@ impl Nibble {
                         if let Some(data) = &mut view.readout { data.sensor = None; }
                         view.message = Some(error);
                     }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
+    }
+
+    fn update_power(&mut self, power: PowerSettings, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        if self.demo {
+            if let Err(error) = self.profiles.set_power(&power) { self.message = Some(error); }
+            cx.notify(); return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Applying power settings…".into());
+        let sent_power = power.clone();
+        let work = cx.background_executor().spawn(async move { device::set_power(&snapshot, &sent_power) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok(()) => {
+                        let previous = view.profiles.clone();
+                        match view.profiles.set_power(&power).and_then(|_| view.save_profiles()) {
+                            Ok(()) => view.message = Some("Power settings sent. This mouse does not report them back.".into()),
+                            Err(error) => { view.profiles = previous; view.message = Some(format!("Power settings were sent, but the profile could not be saved: {error}")); }
+                        }
+                    }
+                    Err(error) => view.message = Some(format!("{error} The mouse may have received the change.")),
                 }
                 cx.notify();
             });
@@ -808,6 +843,7 @@ impl Nibble {
         let fine_dpi = local["fineDpi"].as_bool().unwrap_or(false);
         let mode_24g = local["mode"].as_str() == Some("24g");
         let sensor = self.readout.as_ref().and_then(|data| data.sensor.as_ref());
+        let power = self.profiles.power();
         let lod = match sensor.map(|s| s.lod) { Some(1) => "1mm", Some(2) => "2mm", _ => "—" };
         let angle = sensor.map(|s| if s.angle_snap { "On" } else { "Off" }).unwrap_or("—");
         let ripple = sensor.map(|s| if s.ripple { "On" } else { "Off" }).unwrap_or("—");
@@ -822,15 +858,40 @@ impl Nibble {
             angle_field = angle_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::AngleSnap(next_angle), cx)));
             ripple_field = ripple_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::Ripple(next_ripple), cx)));
         }
+        let debounce = power.as_ref().map(|power| format!("{} ms", power.debounce)).unwrap_or_else(|| "—".into());
+        let mut debounce_control = div().flex().gap(px(6.0)).items_center()
+            .child(div().id("debounce-down").rounded(px(6.0)).bg(rgb(p.inset)).px(px(10.0)).py(px(6.0)).child("−")
+                .on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.debounce = power.debounce.saturating_sub(1); this.update_power(power, cx); } })))
+            .child(div().min_w(px(40.0)).text_center().child(debounce))
+            .child(div().id("debounce-up").rounded(px(6.0)).bg(rgb(p.inset)).px(px(10.0)).py(px(6.0)).child("+")
+                .on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.debounce = power.debounce.saturating_add(1).min(30); this.update_power(power, cx); } })));
+        if !(self.demo || self.experimental_write) || power.is_none() { debounce_control = debounce_control.text_color(rgb(p.muted)); }
         let mouse = card(p).flex_1().child(heading("Mouse Settings"))
             .child(lod_field).child(angle_field).child(ripple_field)
-            .child(field(p, "Debounce Time", "ms · higher reduces double-clicks", "—"))
+            .child(div().flex().justify_between().items_center().min_h(px(74.0))
+                .child(div().flex().flex_col().child("Debounce Time").child(muted(p, "ms · higher reduces double-clicks")))
+                .child(debounce_control))
             .child(field(p, "High-Speed Mode", "Local only", if high_speed { "On" } else { "Off" }).id("local-high-speed").cursor_pointer()
                 .on_click(cx.listener(move |this, _, _, cx| this.update_local_setting("highSpeed", serde_json::json!(!high_speed), cx))));
+        let sleep_label = power.as_ref().map(|power| match power.sleep_wire { 1 => "10 sec", 3 => "30 sec", 6 => "1 min", 12 => "2 min", 30 => "5 min", 60 => "10 min", 120 => "20 min", 180 => "30 min", _ => "—" }).unwrap_or("—");
+        let wake = power.as_ref().map(|power| if power.move_wake { "On" } else { "Off" }).unwrap_or("—");
+        let off_light = power.as_ref().map(|power| if power.move_close_light { "On" } else { "Off" }).unwrap_or("—");
+        let mut sleep_field = field(p, "Sleep after", "Inactivity timeout", sleep_label).id("power-sleep");
+        let mut wake_field = field(p, "Move wake-up", "", wake).id("power-wake");
+        let mut light_field = field(p, "Move to turn off light", "", off_light).id("power-move-light");
+        if power.is_some() && (self.demo || self.experimental_write) {
+            sleep_field = sleep_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
+                if let Some(mut power) = this.profiles.power() {
+                    let options = [1, 3, 6, 12, 30, 60, 120, 180];
+                    let index = options.iter().position(|value| *value == power.sleep_wire).unwrap_or(0);
+                    power.sleep_wire = options[(index + 1) % options.len()]; this.update_power(power, cx);
+                }
+            }));
+            wake_field = wake_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.move_wake = !power.move_wake; this.update_power(power, cx); } }));
+            light_field = light_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.move_close_light = !power.move_close_light; this.update_power(power, cx); } }));
+        }
         let power = card(p).flex_1().child(heading("Power & Sleep"))
-            .child(field(p, "Sleep after", "Inactivity timeout", "—"))
-            .child(field(p, "Move wake-up", "", "—"))
-            .child(field(p, "Move to turn off light", "", "—"))
+            .child(sleep_field).child(wake_field).child(light_field)
             .child(field(p, "Connection mode (display)", "UI only", if mode_24g { "2.4G" } else { "USB" }).id("local-mode").cursor_pointer()
                 .on_click(cx.listener(move |this, _, _, cx| this.update_local_setting("mode", serde_json::json!(if mode_24g { "usb" } else { "24g" }), cx))));
         let system = card(p).mt(px(12.0)).child(heading("System"))
