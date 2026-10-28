@@ -1,3 +1,5 @@
 /.toolchain/
 /target/
+/artifact/
+/artifact.zip
 

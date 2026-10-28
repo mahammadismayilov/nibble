@@ -29,9 +29,14 @@ jobs:
             ${{ runner.os }}-gpui-${{ hashFiles('desktop/gpui-prototype/Cargo.lock') }}-
       - name: Build prototype
         run: cargo build --release --locked
+      - name: Test receiver decoding
+        run: cargo test --release --locked
       - uses: actions/upload-artifact@v4
         with:
           name: nibble-gpui-prototype-windows
-          path: desktop/gpui-prototype/target/release/nibble-gpui-prototype.exe
+          path: |
+            desktop/gpui-prototype/target/release/nibble-gpui-prototype.exe
+            desktop/gpui-prototype/assets/fonts/Outfit-OFL.txt
+            desktop/gpui-prototype/assets/fonts/JetBrainsMono-OFL.txt
           if-no-files-found: error
 
