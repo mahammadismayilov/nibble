@@ -234,17 +234,19 @@ impl Nibble {
         let dpi_editable = (self.demo || self.experimental_write) && data.is_some_and(|d| d.dpi_count.is_some() && d.dpi.len() == 6);
         let rate_editable = (self.demo || self.experimental_write) && data.and_then(|d| d.rate).is_some();
         let mut stage_rows = div().flex().flex_col().gap(px(8.0));
-        for pair in 0..3 {
+        for pair in [[Some(0), Some(1)], [Some(2), Some(3)], [Some(4), None], [Some(5), None]] {
             let mut row = div().flex().gap(px(8.0));
-            for i in pair * 2..pair * 2 + 2 {
-                if i >= stage_count { break; }
+            for i in pair.into_iter().flatten() {
+                if i >= stage_count { continue; }
                 let value = data.and_then(|d| d.dpi.get(i)).map(u16::to_string).unwrap_or_else(|| "—".into());
                 let active = data.and_then(|d| d.active_dpi) == Some(i);
                 let mut stage = div().id(("dpi-stage", i)).rounded(px(8.0)).bg(rgb(if active { p.accent_soft } else { p.inset })).px(px(10.0)).py(px(6.0)).flex().items_center().gap(px(8.0))
                     .child(div().w(px(28.0)).h(px(28.0)).rounded(px(6.0)).bg(rgb(if self.demo { STAGE_COLORS[i] } else { p.muted })))
                     .child(div().text_size(px(12.0)).font_weight(FontWeight::SEMIBOLD).child(format!("Stage {}", i + 1)))
-                    .child(div().font_family("JetBrains Mono").text_size(px(12.0)).text_color(rgb(p.muted)).child(format!("{value} DPI")))
-                    .child(if active { "ACTIVE" } else { "" });
+                    .child(div().font_family("JetBrains Mono").text_size(px(12.0)).text_color(rgb(if active { p.accent } else { p.muted })).child(format!("{value} DPI")));
+                if active {
+                    stage = stage.child(div().rounded_full().bg(rgb(p.accent_soft)).px(px(7.0)).py(px(3.0)).text_size(px(10.0)).text_color(rgb(p.accent)).child("ACTIVE"));
+                }
                 if dpi_editable {
                     stage = stage.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_dpi(i, cx)));
                 }
@@ -273,16 +275,32 @@ impl Nibble {
         }
         let chart = div().mt(px(55.0)).h(px(160.0)).px(px(12.0)).flex().flex_col().justify_center()
             .child(track).child(scale);
-        let levels = div().flex().items_center().gap(px(8.0)).text_size(px(12.0)).text_color(rgb(p.muted)).child("DPI Levels:")
-            .child(div().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(10.0)).child("1     2     3     4     5     6"));
-        let hero = card(p).flex_1().h(px(470.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
+        let mut level_buttons = div().flex().rounded(px(8.0)).bg(rgb(p.inset)).p(px(4.0));
+        for level in 1..=6 {
+            let selected = data.and_then(|d| d.dpi_count) == Some(level);
+            level_buttons = level_buttons.child(div().w(px(31.0)).h(px(32.0)).rounded(px(5.0)).flex().items_center().justify_center()
+                .bg(rgb(if selected { p.hover } else { p.inset }))
+                .text_color(rgb(if selected { p.accent } else { p.muted })).child(level.to_string()));
+        }
+        let levels = div().flex().items_center().gap(px(8.0)).text_size(px(12.0)).text_color(rgb(p.muted)).child("DPI Levels:").child(level_buttons);
+        let selected_value = data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i)))
+            .map(u16::to_string).unwrap_or_else(|| "—".into());
+        let selected_color = data.and_then(|d| d.active_dpi).filter(|_| self.demo)
+            .and_then(|i| STAGE_COLORS.get(i)).copied().unwrap_or(p.muted);
+        let fine_controls = div().flex().items_center().gap(px(12.0)).text_size(px(12.0)).text_color(rgb(p.muted))
+            .child("DPI Value")
+            .child(div().w(px(90.0)).rounded(px(8.0)).bg(rgb(p.inset)).px(px(10.0)).py(px(10.0))
+                .font_family("JetBrains Mono").text_color(rgb(p.text)).child(selected_value))
+            .child("LED Color")
+            .child(div().size(px(26.0)).rounded(px(4.0)).bg(rgb(selected_color)));
+        let hero = card(p).flex_1().h(px(520.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
             .child(div().flex().items_center().justify_between()
                 .child(div().flex().items_center().gap(px(20.0)).child(heading("DPI Sensitivity")).child(levels))
                 .child(muted(p, "Reset DPI")))
             .child(chart)
             .child(div().mt(px(25.0)).flex().items_center().justify_between().gap(px(20.0))
                 .child(stage_rows)
-                .child(div().flex().gap(px(14.0)).text_size(px(12.0)).text_color(rgb(p.muted)).child("DPI Value   —").child("LED Color   —")));
+                .child(fine_controls));
         let mut rate_options = div().flex().flex_col().gap(px(8.0)).mt(px(14.0));
         for pair in [[125, 250], [500, 1000]] {
             let mut row = div().flex().gap(px(8.0));
@@ -299,7 +317,7 @@ impl Nibble {
             }
             rate_options = rate_options.child(row);
         }
-        let rates = card(p).w(px(280.0)).h(px(470.0)).child(heading("Report Rate"))
+        let rates = card(p).w(px(280.0)).h(px(520.0)).child(heading("Report Rate"))
             .child(muted(p, "How often the mouse reports position to the PC"))
             .child(rate_options);
         div().flex().w_full().gap(px(16.0)).child(hero).child(rates)

@@ -19,7 +19,8 @@ fn main() {
         }
         let display = cx.primary_display().map(|display| display.bounds().size);
         let width = display.map(|size| size.width.min(px(1100.0))).unwrap_or(px(1100.0));
-        let height = display.map(|size| size.height.min(px(750.0))).unwrap_or(px(750.0));
+        // Leave space for the native title bar and the Windows taskbar on small displays.
+        let height = display.map(|size| (size.height - px(96.0)).max(px(650.0)).min(px(750.0))).unwrap_or(px(750.0));
         let bounds = Bounds::centered(None, size(width, height), cx);
         cx.open_window(
             WindowOptions {
