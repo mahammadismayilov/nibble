@@ -121,7 +121,7 @@ impl Nibble {
         let data = self.readout.as_ref();
         let dpi = data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i))).map(u16::to_string).unwrap_or_else(|| "—".into());
         let stage = data.and_then(|d| d.active_dpi).map(|i| format!("Stage {}", i + 1)).unwrap_or_else(|| "Not available".into());
-        let rate = data.and_then(|d| d.rate).map(u16::to_string).unwrap_or_else(|| "—".into());
+        let rate = data.and_then(|d| d.rate).map(|value| value.to_string()).unwrap_or_else(|| "—".into());
         let battery = data.and_then(|d| d.battery).map(|value| format!("{value}%")).unwrap_or_else(|| "—".into());
         let battery_sub = match data { Some(d) if d.sleeping => "Sleeping", Some(d) if d.charging => "Charging", Some(d) if d.battery.is_some() => "Last read", _ => "Unavailable" };
         let hero = div().flex_1().h(px(560.0)).flex().flex_col().items_center().justify_center()
