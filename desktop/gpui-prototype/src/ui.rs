@@ -1,7 +1,7 @@
 use crate::device::{self, LightChange, LightMode, Lighting, Readout, Sensor, SensorChange};
 use gpui::{
-    Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, Render, StyledImage,
-    Window, div, img, prelude::*, px, relative, rgb,
+    Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, Render, ScrollHandle, StyledImage,
+    Window, div, img, point, prelude::*, px, relative, rgb,
 };
 use std::sync::Arc;
 use std::path::PathBuf;
@@ -46,6 +46,7 @@ pub struct Nibble {
     dpi_input: Option<String>,
     dpi_replace_input: bool,
     selected_key: usize,
+    content_scroll: ScrollHandle,
     mouse: Arc<Image>,
     logo: Arc<Image>,
 }
@@ -80,6 +81,7 @@ impl Nibble {
             dpi_input: None,
             dpi_replace_input: false,
             selected_key: 0,
+            content_scroll: ScrollHandle::new(),
             mouse: Arc::new(Image::from_bytes(
                 ImageFormat::Png,
                 include_bytes!("../../../webapp/assets/device/mouse_aj179.png").to_vec(),
@@ -413,7 +415,10 @@ impl Nibble {
                     .text_color(rgb(if selected { p.accent } else { p.muted }))
                     .font_weight(if selected { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
                     .child(*label)
-                    .on_click(cx.listener(move |this, _, _, cx| { this.screen = index; cx.notify(); })),
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
+                        this.screen = index; this.dpi_input = None; cx.notify();
+                    })),
             );
         }
         div().flex().flex_col().child(
@@ -762,7 +767,7 @@ impl Render for Nibble {
         div().size_full().bg(rgb(p.bg)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
             .flex().flex_col().px(px(20.0)).pt(px(8.0))
             .child(self.header(p, cx))
-            .child(div().id("content").flex_1().min_h(px(0.0)).overflow_y_scroll().pt(px(5.0)).child(page))
+            .child(div().id("content").track_scroll(&self.content_scroll).flex_1().min_h(px(0.0)).overflow_y_scroll().pt(px(5.0)).child(page))
             .child(div().h(px(26.0)).text_size(px(11.0)).text_color(rgb(p.muted)).child(notice))
     }
 }
