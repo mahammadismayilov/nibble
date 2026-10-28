@@ -12,6 +12,7 @@ pub struct Readout {
     pub rate: Option<u16>,
     pub vid: u16,
     pub pid: u16,
+    pub path: Vec<u8>,
 }
 
 // Only GET requests are sent. The handle is closed when the scan finishes.
@@ -24,7 +25,7 @@ pub fn read_mouse() -> Result<Readout, String> {
                 || device.usage_page() >= 0xff00)
     }).ok_or("AJ179P receiver not found")?;
     let mouse = info.open_device(&api).map_err(|error| format!("Receiver found, but could not open it: {error}"))?;
-    let mut result = Readout { vid: info.vendor_id(), pid: info.product_id(), ..Default::default() };
+    let mut result = Readout { vid: info.vendor_id(), pid: info.product_id(), path: info.path().to_bytes().to_vec(), ..Default::default() };
 
     if let Some(reply) = query(&mouse, 0x10) {
         parse_battery(&reply, &mut result);
@@ -40,6 +41,87 @@ pub fn read_mouse() -> Result<Readout, String> {
         }
     }
     Ok(result)
+}
+
+fn open_original_mouse(snapshot: &Readout) -> Result<(HidApi, HidDevice), String> {
+    let api = HidApi::new().map_err(|error| error.to_string())?;
+    let info = api.device_list().find(|device| {
+        device.vendor_id() == snapshot.vid && device.product_id() == snapshot.pid
+            && device.path().to_bytes() == snapshot.path.as_slice()
+    }).ok_or("Receiver changed or disconnected. Refresh before trying again.")?;
+    let mouse = info.open_device(&api).map_err(|error| format!("Could not open the receiver: {error}"))?;
+    Ok((api, mouse))
+}
+
+pub fn set_active_dpi(snapshot: &Readout, index: usize) -> Result<(usize, usize, Vec<u16>), String> {
+    let (_api, mouse) = open_original_mouse(snapshot)?;
+    let (_, count, stages) = query(&mouse, 0x13)
+        .and_then(|reply| parse_dpi(&reply))
+        .ok_or("Could not read the full DPI table. No settings were sent.")?;
+    let packet = dpi_packet(&stages, index, count)?;
+    send_setting(&mouse, &packet)?;
+    let readback = query(&mouse, 0x13).and_then(|reply| parse_dpi(&reply))
+        .ok_or("DPI change was sent, but the mouse did not confirm it. Refresh before trying again.")?;
+    if readback.0 != index || readback.1 != count || readback.2 != stages {
+        return Err("The mouse returned different DPI settings. Refresh before trying again.".into());
+    }
+    Ok(readback)
+}
+
+pub fn set_rate(snapshot: &Readout, rate: u16) -> Result<u16, String> {
+    let (_api, mouse) = open_original_mouse(snapshot)?;
+    let packet = rate_packet(rate)?;
+    if query(&mouse, 0x12).and_then(|reply| parse_rate(&reply)).is_none() {
+        return Err("Could not read the report rate. No settings were sent.".into());
+    }
+    send_setting(&mouse, &packet)?;
+    let actual = query(&mouse, 0x12).and_then(|reply| parse_rate(&reply))
+        .ok_or("Report-rate change was sent, but the mouse did not confirm it. Refresh before trying again.")?;
+    if actual != rate {
+        return Err("The mouse returned a different report rate. Refresh before trying again.".into());
+    }
+    Ok(actual)
+}
+
+fn send_setting(mouse: &HidDevice, packet: &[u8; 33]) -> Result<(), String> {
+    match mouse.write(packet) {
+        Ok(33) => std::thread::sleep(Duration::from_millis(90)),
+        Ok(_) => return Err("The receiver accepted an incomplete packet. Refresh before trying again.".into()),
+        Err(error) => return Err(format!("Could not send the setting: {error}")),
+    }
+    Ok(())
+}
+
+fn dpi_packet(stages: &[u16], active: usize, count: usize) -> Result<[u8; 33], String> {
+    if stages.len() != 6 || !(1..=6).contains(&count) || active >= count
+        || stages.iter().any(|dpi| !(50..=26000).contains(dpi) || dpi % 50 != 0) {
+        return Err("The DPI table is incomplete or unsupported. No settings were sent.".into());
+    }
+    let mut packet = [0u8; 33];
+    packet[1] = 0x03;
+    packet[3] = 1;
+    packet[4] = 0x25;
+    packet[5] = ((active as u8) << 4) | count as u8;
+    for (index, dpi) in stages.iter().enumerate() {
+        let wire = (dpi / 50 - 1).to_le_bytes();
+        let offset = 6 + index * 4;
+        packet[offset..offset + 2].copy_from_slice(&wire);
+        packet[offset + 2..offset + 4].copy_from_slice(&wire);
+    }
+    packet[32] = packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    Ok(packet)
+}
+
+fn rate_packet(rate: u16) -> Result<[u8; 33], String> {
+    let wire = match rate { 125 => 8, 250 => 4, 500 => 2, 1000 => 1,
+        _ => return Err("Unsupported report rate. No settings were sent.".into()) };
+    let mut packet = [0u8; 33];
+    packet[1] = 0x02;
+    packet[3] = 1;
+    packet[4] = 1;
+    packet[5] = wire;
+    packet[32] = wire;
+    Ok(packet)
 }
 
 fn query(device: &HidDevice, command: u8) -> Option<[u8; 33]> {
@@ -187,6 +269,20 @@ mod tests {
         value_containing_25[6] = 0x25;
         value_containing_25[8] = 0x25;
         assert_eq!(parse_dpi(&value_containing_25).unwrap().2[0], 1900);
+    }
+
+    #[test]
+    fn settings_packets_match_the_existing_protocol_and_reject_incomplete_tables() {
+        let packet = dpi_packet(&[400, 800, 1200, 1600, 2400, 10000], 2, 6).unwrap();
+        assert_eq!(packet, [0, 3, 0, 1, 0x25, 0x26, 7, 0, 7, 0, 15, 0, 15, 0,
+            23, 0, 23, 0, 31, 0, 31, 0, 47, 0, 47, 0, 199, 0, 199, 0, 0, 0, 0xaa]);
+        assert!(dpi_packet(&[400, 800], 0, 2).is_err());
+        assert!(dpi_packet(&[400, 800, 1200, 1600, 2400, 10001], 0, 6).is_err());
+        assert!(dpi_packet(&[400, 800, 1200, 1600, 2400, 10000], 2, 2).is_err());
+        let rate = rate_packet(500).unwrap();
+        assert_eq!(&rate[..6], &[0, 2, 0, 1, 1, 2]);
+        assert_eq!(rate[32], 2);
+        assert!(rate_packet(8000).is_err());
     }
 }
 

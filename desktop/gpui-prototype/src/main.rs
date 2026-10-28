@@ -7,7 +7,9 @@ use gpui::{App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, 
 use std::borrow::Cow;
 
 fn main() {
-    let demo = std::env::args().any(|arg| arg == "--demo");
+    let args: Vec<_> = std::env::args().collect();
+    let demo = args.iter().any(|arg| arg == "--demo");
+    let experimental_write = args.iter().any(|arg| arg == "--experimental-write") && !demo;
     Application::new().run(move |cx: &mut App| {
         if let Err(error) = cx.text_system().add_fonts(vec![
             Cow::Borrowed(include_bytes!("../assets/fonts/Outfit.ttf").as_slice()),
@@ -29,7 +31,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            move |_, cx| cx.new(|cx| ui::Nibble::new(cx, demo)),
+            move |_, cx| cx.new(|cx| ui::Nibble::new(cx, demo, experimental_write)),
         )
         .expect("Could not open Nibble prototype window");
         cx.activate(true);

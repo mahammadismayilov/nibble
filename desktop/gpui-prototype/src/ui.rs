@@ -35,15 +35,18 @@ pub struct Nibble {
     screen: usize,
     dark: bool,
     demo: bool,
+    experimental_write: bool,
     scanning: bool,
+    applying: bool,
     readout: Option<Readout>,
     error: Option<String>,
+    message: Option<String>,
     mouse: Arc<Image>,
     logo: Arc<Image>,
 }
 
 impl Nibble {
-    pub fn new(cx: &mut Context<Self>, demo: bool) -> Self {
+    pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool) -> Self {
         if !demo { Self::scan(cx); }
         let readout = demo.then(|| Readout {
             battery: Some(80),
@@ -59,9 +62,12 @@ impl Nibble {
             screen: 0,
             dark: true,
             demo,
+            experimental_write,
             scanning: !demo,
+            applying: false,
             readout,
             error: None,
+            message: None,
             mouse: Arc::new(Image::from_bytes(
                 ImageFormat::Png,
                 include_bytes!("../../../webapp/assets/device/mouse_aj179.png").to_vec(),
@@ -86,6 +92,78 @@ impl Nibble {
                 cx.notify();
             });
         }).detach();
+    }
+
+    fn select_dpi(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        if self.demo {
+            if let Some(data) = &mut self.readout { data.active_dpi = Some(index); }
+            cx.notify();
+            return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Applying DPI stage…".into());
+        let work = cx.background_executor().spawn(async move { device::set_active_dpi(&snapshot, index) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok((active, count, stages)) => {
+                        if let Some(data) = &mut view.readout {
+                            data.active_dpi = Some(active);
+                            data.dpi_count = Some(count);
+                            data.dpi = stages;
+                        }
+                        view.message = Some("DPI stage confirmed by receiver.".into());
+                    }
+                    Err(error) => {
+                        if let Some(data) = &mut view.readout {
+                            data.active_dpi = None;
+                            data.dpi_count = None;
+                            data.dpi.clear();
+                        }
+                        view.message = Some(error);
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
+    }
+
+    fn select_rate(&mut self, rate: u16, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        if self.demo {
+            if let Some(data) = &mut self.readout { data.rate = Some(rate); }
+            cx.notify();
+            return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Applying report rate…".into());
+        let work = cx.background_executor().spawn(async move { device::set_rate(&snapshot, rate) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok(rate) => {
+                        if let Some(data) = &mut view.readout { data.rate = Some(rate); }
+                        view.message = Some("Report rate confirmed by receiver.".into());
+                    }
+                    Err(error) => {
+                        if let Some(data) = &mut view.readout { data.rate = None; }
+                        view.message = Some(error);
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
     }
 
     fn header(&self, p: Palette, cx: &mut Context<Self>) -> Div {
@@ -122,7 +200,7 @@ impl Nibble {
                 .child(div().flex_1().min_w(px(0.0)).text_size(px(12.0)).text_color(rgb(if self.readout.is_some() { p.success } else { p.muted })).child(format!("●  {status}")))
                 .child(div().id("refresh").cursor_pointer().rounded(px(8.0)).px(px(12.0)).py(px(8.0)).bg(rgb(p.accent_soft)).text_color(rgb(p.accent))
                     .child(if self.demo { "Demo" } else if self.scanning { "Checking…" } else { "Refresh" })
-                    .on_click(cx.listener(|this, _, _, cx| { if !this.demo && !this.scanning { this.scanning = true; Self::scan(cx); cx.notify(); } })))
+                    .on_click(cx.listener(|this, _, _, cx| { if !this.demo && !this.scanning && !this.applying { this.scanning = true; this.message = None; Self::scan(cx); cx.notify(); } })))
                 .child(div().text_color(rgb(p.muted)).text_size(px(12.0)).child(format!("▰  {battery}")))
                 .child(div().font_weight(FontWeight::SEMIBOLD).child("Default Profile  ⌄"))
                 .child(div().id("theme").cursor_pointer().rounded(px(8.0)).px(px(9.0)).py(px(7.0)).text_size(px(18.0))
@@ -150,9 +228,11 @@ impl Nibble {
         div().flex().w_full().gap(px(12.0)).child(hero).child(stats)
     }
 
-    fn dpi(&self, p: Palette) -> Div {
+    fn dpi(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let data = self.readout.as_ref();
         let stage_count = data.and_then(|d| d.dpi_count).unwrap_or(6);
+        let dpi_editable = (self.demo || self.experimental_write) && data.is_some_and(|d| d.dpi_count.is_some() && d.dpi.len() == 6);
+        let rate_editable = (self.demo || self.experimental_write) && data.and_then(|d| d.rate).is_some();
         let mut stage_rows = div().flex().flex_col().gap(px(8.0));
         for pair in 0..3 {
             let mut row = div().flex().gap(px(8.0));
@@ -160,11 +240,15 @@ impl Nibble {
                 if i >= stage_count { break; }
                 let value = data.and_then(|d| d.dpi.get(i)).map(u16::to_string).unwrap_or_else(|| "—".into());
                 let active = data.and_then(|d| d.active_dpi) == Some(i);
-                row = row.child(div().rounded(px(8.0)).bg(rgb(if active { p.accent_soft } else { p.inset })).px(px(10.0)).py(px(6.0)).flex().items_center().gap(px(8.0))
+                let mut stage = div().id(("dpi-stage", i)).rounded(px(8.0)).bg(rgb(if active { p.accent_soft } else { p.inset })).px(px(10.0)).py(px(6.0)).flex().items_center().gap(px(8.0))
                     .child(div().w(px(28.0)).h(px(28.0)).rounded(px(6.0)).bg(rgb(if self.demo { STAGE_COLORS[i] } else { p.muted })))
                     .child(div().text_size(px(12.0)).font_weight(FontWeight::SEMIBOLD).child(format!("Stage {}", i + 1)))
                     .child(div().font_family("JetBrains Mono").text_size(px(12.0)).text_color(rgb(p.muted)).child(format!("{value} DPI")))
-                    .child(if active { "ACTIVE" } else { "" }));
+                    .child(if active { "ACTIVE" } else { "" });
+                if dpi_editable {
+                    stage = stage.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_dpi(i, cx)));
+                }
+                row = row.child(stage);
             }
             stage_rows = stage_rows.child(row);
         }
@@ -204,10 +288,14 @@ impl Nibble {
             let mut row = div().flex().gap(px(8.0));
             for rate in pair {
                 let active = data.and_then(|d| d.rate) == Some(rate);
-                row = row.child(div().flex_1().rounded(px(10.0)).h(px(80.0)).flex().flex_col().justify_center().items_center().gap(px(4.0))
+                let mut button = div().id(("rate", usize::from(rate))).flex_1().rounded(px(10.0)).h(px(80.0)).flex().flex_col().justify_center().items_center().gap(px(4.0))
                     .bg(rgb(if active { p.accent_soft } else { p.inset })).text_color(rgb(if active { p.accent } else { p.text }))
                     .child(div().font_weight(FontWeight::SEMIBOLD).child(format!("{rate} Hz")))
-                    .child(div().text_size(px(11.0)).text_color(rgb(p.muted)).child(if rate == 1000 { "Default" } else { "Report rate" })));
+                    .child(div().text_size(px(11.0)).text_color(rgb(p.muted)).child(if rate == 1000 { "Default" } else { "Report rate" }));
+                if rate_editable {
+                    button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_rate(rate, cx)));
+                }
+                row = row.child(button);
             }
             rate_options = rate_options.child(row);
         }
@@ -322,13 +410,15 @@ impl Render for Nibble {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = Palette::new(self.dark);
         let page = match self.screen {
-            0 => self.home(p), 1 => self.keys(p), 2 => self.dpi(p), 3 => self.lighting(p),
+            0 => self.home(p), 1 => self.keys(p), 2 => self.dpi(p, cx), 3 => self.lighting(p),
             4 => div().h(px(440.0)).flex().justify_center().items_center().text_color(rgb(p.muted)).child("Macros are not available in this version."),
             5 => self.settings(p), _ => self.about(p),
         };
         let notice = if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
             else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
+            else if let Some(message) = &self.message { message.clone() }
+            else if self.experimental_write { "Experimental mode · DPI stage and report rate can change the receiver. Close other mouse software.".into() }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
         div().size_full().bg(rgb(p.bg)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
             .flex().flex_col().px(px(20.0)).pt(px(8.0))
