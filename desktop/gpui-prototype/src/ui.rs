@@ -1,4 +1,5 @@
 use crate::device::{self, LightChange, LightMode, Lighting, Readout, Sensor, SensorChange};
+use crate::profile::{self, Profiles};
 use gpui::{
     Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, Render, ScrollHandle, StyledImage,
     Window, div, img, point, prelude::*, px, relative, rgb,
@@ -47,6 +48,7 @@ pub struct Nibble {
     dpi_replace_input: bool,
     selected_key: usize,
     content_scroll: ScrollHandle,
+    profiles: Profiles,
     mouse: Arc<Image>,
     logo: Arc<Image>,
 }
@@ -54,6 +56,16 @@ pub struct Nibble {
 impl Nibble {
     pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool) -> Self {
         if !demo { Self::scan(cx); }
+        let (profiles, profile_error) = if demo {
+            (Profiles::new(), None)
+        } else if let Some(path) = profile::profile_path() {
+            match Profiles::load(&path) {
+                Ok(profiles) => (profiles, None),
+                Err(error) => (Profiles::new(), Some(format!("{error}. Saved files were not changed."))),
+            }
+        } else {
+            (Profiles::new(), Some("Could not locate the profile folder.".into()))
+        };
         let readout = demo.then(|| Readout {
             battery: Some(80),
             dpi: vec![400, 800, 1200, 1600, 2400, 10000],
@@ -76,12 +88,13 @@ impl Nibble {
             applying: false,
             readout,
             error: None,
-            message: None,
+            message: profile_error,
             dpi_focus: cx.focus_handle(),
             dpi_input: None,
             dpi_replace_input: false,
             selected_key: 0,
             content_scroll: ScrollHandle::new(),
+            profiles,
             mouse: Arc::new(Image::from_bytes(
                 ImageFormat::Png,
                 include_bytes!("../../../webapp/assets/device/mouse_aj179.png").to_vec(),
@@ -433,7 +446,7 @@ impl Nibble {
                     .child(if self.demo { "Demo" } else if self.scanning { "Checking…" } else { "Refresh" })
                     .on_click(cx.listener(|this, _, _, cx| { if !this.demo && !this.scanning && !this.applying { this.scanning = true; this.message = None; Self::scan(cx); cx.notify(); } })))
                 .child(div().text_color(rgb(p.muted)).text_size(px(12.0)).child(format!("▰  {battery}")))
-                .child(div().font_weight(FontWeight::SEMIBOLD).child("Default Profile  ⌄"))
+                .child(div().font_weight(FontWeight::SEMIBOLD).child(format!("{}  ⌄", self.profiles.current()["name"].as_str().unwrap_or("Profile"))))
                 .child(div().id("theme").cursor_pointer().rounded(px(8.0)).px(px(9.0)).py(px(7.0)).text_size(px(18.0))
                     .child(if self.dark { "☼" } else { "☾" })
                     .on_click(cx.listener(|this, _, _, cx| { this.set_theme(!this.dark, cx); })))
