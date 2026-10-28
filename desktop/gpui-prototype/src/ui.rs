@@ -448,7 +448,8 @@ impl Nibble {
             .map(u16::to_string)).unwrap_or_else(|| "—".into());
         let selected_color = data.and_then(|d| d.active_dpi).filter(|_| self.demo)
             .and_then(|i| STAGE_COLORS.get(i)).copied().unwrap_or(p.muted);
-        let mut dpi_input = div().id("dpi-value").track_focus(&self.dpi_focus).w(px(90.0)).rounded(px(8.0)).bg(rgb(p.inset)).px(px(10.0)).py(px(10.0))
+        let mut dpi_input = div().id("dpi-value").track_focus(&self.dpi_focus).w(px(90.0)).rounded(px(8.0))
+            .border_1().border_color(rgb(if self.dpi_input.is_some() { p.accent } else { p.inset })).bg(rgb(p.inset)).px(px(10.0)).py(px(10.0))
             .font_family("JetBrains Mono").text_color(rgb(p.text)).child(selected_value);
         if dpi_editable {
             dpi_input = dpi_input.cursor_text()
@@ -637,7 +638,8 @@ impl Render for Nibble {
             4 => div().h(px(440.0)).flex().justify_center().items_center().text_color(rgb(p.muted)).child("Macros are not available in this version."),
             5 => self.settings(p, cx), _ => self.about(p),
         };
-        let notice = if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
+        let notice = if self.dpi_input.is_some() { "Enter a DPI value, then press Enter to apply or Escape to cancel.".to_string() }
+            else if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
             else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
             else if let Some(message) = &self.message { message.clone() }
