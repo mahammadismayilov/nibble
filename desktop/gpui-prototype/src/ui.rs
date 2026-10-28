@@ -54,7 +54,7 @@ impl Nibble {
             active_dpi: Some(5),
             dpi_count: Some(6),
             rate: Some(1000),
-            lighting: Some(Lighting { mode: LightMode::Breathing, brightness: 0, speed: 2 }),
+            lighting: Some(Lighting { mode: LightMode::Breathing, brightness: 0, speed: 6 }),
             vid: 0x249a,
             pid: 0x5c2f,
             ..Default::default()

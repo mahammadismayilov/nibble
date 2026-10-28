@@ -213,7 +213,7 @@ fn parse_light(buf: &[u8]) -> Option<Lighting> {
     let brightness = buf[6] >> 4;
     let speed = buf[6] & 0x0f;
     if brightness > 4 || speed > 4 { return None; }
-    Some(Lighting { mode, brightness: brightness * 25, speed })
+    Some(Lighting { mode, brightness: brightness * 25, speed: 1 + (speed * 9 + 2) / 4 })
 }
 
 fn parse_battery(buf: &[u8], result: &mut Readout) {
@@ -339,7 +339,7 @@ mod tests {
         reply[4] = 0x18;
         reply[5] = 2;
         reply[6] = 0x42;
-        assert_eq!(parse_light(&reply), Some(Lighting { mode: LightMode::Breathing, brightness: 100, speed: 2 }));
+        assert_eq!(parse_light(&reply), Some(Lighting { mode: LightMode::Breathing, brightness: 100, speed: 6 }));
         assert!(matches_reply(0x15, &reply));
         reply[6] = 0x52;
         assert_eq!(parse_light(&reply), None);
