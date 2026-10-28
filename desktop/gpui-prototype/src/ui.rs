@@ -117,7 +117,13 @@ impl Nibble {
             let _ = view.update(cx, |view, cx| {
                 view.scanning = false;
                 match result {
-                    Ok(data) => { view.readout = Some(data); view.error = None; }
+                    Ok(data) => {
+                        view.readout = Some(data);
+                        view.error = None;
+                        if view.profiles_writable {
+                            if let Err(error) = view.sync_profile_from_readout() { view.message = Some(error); }
+                        }
+                    }
                     Err(error) => { view.readout = None; view.error = Some(error); }
                 }
                 cx.notify();
@@ -142,6 +148,20 @@ impl Nibble {
         if !self.profiles_writable { return Err("Saved profiles could not be loaded; the file was not changed.".into()); }
         let path = profile::profile_path().ok_or("Could not locate the profile folder")?;
         self.profiles.save(&path)
+    }
+
+    fn sync_profile_from_readout(&mut self) -> Result<(), String> {
+        let Some(readout) = self.readout.as_ref() else { return Ok(()); };
+        let previous = self.profiles.clone();
+        if let Err(error) = self.profiles.sync_readout(readout).and_then(|_| self.save_profiles()) {
+            self.profiles = previous;
+            return Err(format!("Could not save synchronized profile: {error}"));
+        }
+        Ok(())
+    }
+
+    fn confirm_and_save(&mut self, message: &'static str) {
+        self.message = Some(match self.sync_profile_from_readout() { Ok(()) => message.into(), Err(error) => error });
     }
 
     fn select_profile(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -280,7 +300,7 @@ impl Nibble {
                 match result {
                     Ok((active, count, stages)) => {
                         if let Some(data) = &mut view.readout { data.active_dpi = Some(active); data.dpi_count = Some(count); data.dpi = stages; }
-                        view.message = Some("DPI value confirmed by receiver.".into());
+                        view.confirm_and_save("DPI value confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.active_dpi = None; data.dpi_count = None; data.dpi.clear(); }
@@ -329,7 +349,7 @@ impl Nibble {
                             data.dpi_count = Some(count);
                             data.dpi = stages;
                         }
-                        view.message = Some("DPI settings confirmed by receiver.".into());
+                        view.confirm_and_save("DPI settings confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout {
@@ -366,7 +386,7 @@ impl Nibble {
                 match result {
                     Ok(rate) => {
                         if let Some(data) = &mut view.readout { data.rate = Some(rate); }
-                        view.message = Some("Report rate confirmed by receiver.".into());
+                        view.confirm_and_save("Report rate confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.rate = None; }
@@ -404,7 +424,7 @@ impl Nibble {
                 match result {
                     Ok(sensor) => {
                         if let Some(data) = &mut view.readout { data.sensor = Some(sensor); }
-                        view.message = Some("Sensor setting confirmed by receiver.".into());
+                        view.confirm_and_save("Sensor setting confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.sensor = None; }
@@ -443,7 +463,7 @@ impl Nibble {
                 match result {
                     Ok(keys) => {
                         if let Some(data) = &mut view.readout { data.keys = Some(keys); }
-                        view.message = Some("Button assignment confirmed by receiver.".into());
+                        view.confirm_and_save("Button assignment confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.keys = None; }
@@ -477,7 +497,7 @@ impl Nibble {
                 match result {
                     Ok(light) => {
                         if let Some(data) = &mut view.readout { data.lighting = Some(light); }
-                        view.message = Some("Lighting settings confirmed by receiver.".into());
+                        view.confirm_and_save("Lighting settings confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.lighting = None; }
@@ -553,6 +573,7 @@ impl Nibble {
         let rate = data.and_then(|d| d.rate).map(|value| value.to_string()).unwrap_or_else(|| "—".into());
         let battery = data.and_then(|d| d.battery).map(|value| format!("{value}%")).unwrap_or_else(|| "—".into());
         let battery_sub = match data { Some(d) if d.sleeping => "Sleeping", Some(d) if d.charging => "Charging", Some(d) if d.battery.is_some() => "Last read", _ => "Unavailable" };
+        let connection = if self.profiles.current()["settings"]["mode"].as_str() == Some("24g") { "2.4G" } else { "USB" };
         let lighting = data.and_then(|d| d.lighting.as_ref());
         let light_name = lighting.map(|light| match light.mode { LightMode::Off => "Close", LightMode::Breathing => "Breathing", LightMode::Constant => "Constant light" }).unwrap_or("—");
         let light_detail = lighting.map(|light| if light.mode == LightMode::Off { "Off".into() } else { format!("{}% brightness", light.brightness) }).unwrap_or_else(|| "Unavailable".into());
@@ -563,7 +584,7 @@ impl Nibble {
         let stats = div().flex_1().h(px(560.0)).flex().flex_col()
             .child(div().flex().h(px(185.0)).child(stat(p, "DPI", dpi, stage, true)).child(stat(p, "POLLING RATE", rate, "Hz".into(), true)))
             .child(div().h(px(185.0)).child(stat(p, "LIGHTING", light_name.into(), light_detail, false)))
-            .child(div().flex().h(px(185.0)).child(stat(p, "CONNECTION", "USB".into(), if data.is_some() { "Receiver found".into() } else { "Not connected".into() }, false))
+            .child(div().flex().h(px(185.0)).child(stat(p, "CONNECTION", connection.into(), if data.is_some() { "Receiver found".into() } else { "Not connected".into() }, false))
                 .child(stat(p, "BATTERY", battery, battery_sub.into(), false)));
         div().flex().w_full().gap(px(12.0)).child(hero).child(stats)
     }

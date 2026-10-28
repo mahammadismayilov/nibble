@@ -1,3 +1,4 @@
+use crate::device::{self, LightMode, Readout};
 use serde_json::{Value, json};
 use std::{fs, io::{self, Write}, path::{Path, PathBuf}};
 
@@ -59,6 +60,57 @@ impl Profiles {
         let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
         self.document["profiles"][index]["settings"][key] = value;
         Ok(())
+    }
+
+    pub fn sync_readout(&mut self, data: &Readout) -> Result<(), String> {
+        let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
+        let current = &mut self.document["profiles"][index];
+        if data.dpi.len() == 6 && data.dpi.iter().all(|value| (50..=26000).contains(value) && value % 50 == 0) {
+            for (stage, value) in current["dpiStages"].as_array_mut().ok_or("DPI stages are missing")?.iter_mut().zip(&data.dpi) {
+                stage["value"] = json!(value);
+            }
+            if let (Some(active), Some(count)) = (data.active_dpi, data.dpi_count) {
+                if (1..=6).contains(&count) && active < count {
+                    current["activeDpi"] = json!(active);
+                    current["dpiStageCount"] = json!(count);
+                }
+            }
+        }
+        if let Some(index) = data.rate.and_then(|rate| match rate { 125 => Some(0), 250 => Some(1), 500 => Some(2), 1000 => Some(3), _ => None }) {
+            current["reportRateIndex"] = json!(index);
+        }
+        if let Some(sensor) = &data.sensor {
+            current["settings"]["lod"] = json!(if sensor.lod == 2 { "high" } else { "low" });
+            current["settings"]["angleSnap"] = json!(sensor.angle_snap);
+            current["settings"]["ripple"] = json!(sensor.ripple);
+        }
+        if let Some(keys) = &data.keys {
+            for (slot, key) in keys.iter().enumerate() {
+                let id = match device::key_label(*key) {
+                    "Left-Click" => Some("left"), "Right-Click" => Some("right"), "Middle-Click" => Some("middle"),
+                    "Backward" => Some("backward"), "Forward" => Some("forward"), "Double-Click" => Some("double"),
+                    "Scroll Up" => Some("scroll_up"), "Scroll Down" => Some("scroll_down"), "DPI Loop" => Some("dpi_loop"),
+                    "Disable Key" => Some("disable"), "Lighting on/off" => Some("light_toggle"),
+                    "Volume +" => Some("vol_up"), "Volume -" => Some("vol_down"), "Mute" => Some("mute"),
+                    "Play/Pause" => Some("play"), "Previous" => Some("prev"), "Next" => Some("next"), "Stop" => Some("stop"),
+                    "Calculator" => Some("calc"), "My Computer" => Some("computer"), "Mail" => Some("mail"),
+                    "Screen Brightness +" => Some("brightness_up"), "Screen Brightness -" => Some("brightness_down"),
+                    "Refresh (F5)" => Some("refresh"), "Switch Application" => Some("switch_app"), "Copy" => Some("copy"), "Paste" => Some("paste"),
+                    _ => None,
+                };
+                // Device order is left, right, middle, back, forward, DPI.
+                if let Some(id) = id { current["keys"][["201", "202", "203", "205", "204", "206"][slot]] = json!(id); }
+            }
+        }
+        if let Some(light) = &data.lighting {
+            current["light"]["mode"] = json!(match light.mode { LightMode::Off => "off", LightMode::Breathing => "breathe", LightMode::Constant => "solid" });
+            current["light"]["brightness"] = json!(light.brightness);
+            current["light"]["speed"] = json!(light.speed);
+            if let Some([r, g, b]) = light.color.filter(|color| *color != [0, 0, 0]) {
+                current["light"]["color"] = json!(format!("#{r:02X}{g:02X}{b:02X}"));
+            }
+        }
+        validate_profile(current)
     }
 
     pub fn import(&mut self, input: &str) -> Result<(), String> {
@@ -163,6 +215,18 @@ mod tests {
         assert_eq!(state.document, before);
         state.set_local_setting("fineDpi", json!(true)).unwrap();
         assert_eq!(state.current()["settings"]["fineDpi"], true);
+    }
+
+    #[test]
+    fn sync_keeps_unread_settings_and_stage_colors() {
+        let mut state = Profiles::new();
+        state.set_local_setting("fineDpi", json!(true)).unwrap();
+        let readout = Readout { dpi: vec![400, 800, 1200, 1600, 2400, 10000], active_dpi: Some(5), dpi_count: Some(6), rate: Some(1000), ..Default::default() };
+        state.sync_readout(&readout).unwrap();
+        assert_eq!(state.current()["dpiStages"][5]["value"], 10000);
+        assert_eq!(state.current()["dpiStages"][5]["color"], "#800080");
+        assert_eq!(state.current()["settings"]["fineDpi"], true);
+        assert_eq!(state.current()["settings"]["sleepWire"], 30);
     }
 
     #[test]
