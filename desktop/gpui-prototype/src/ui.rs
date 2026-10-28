@@ -1,4 +1,4 @@
-use crate::device::{self, LightMode, Lighting, Readout, Sensor};
+use crate::device::{self, LightMode, Lighting, Readout, Sensor, SensorChange};
 use gpui::{
     Context, Div, FontWeight, Image, ImageFormat, IntoElement, ObjectFit, Render, StyledImage,
     Window, div, img, prelude::*, px, relative, rgb,
@@ -194,6 +194,44 @@ impl Nibble {
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.rate = None; }
+                        view.message = Some(error);
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
+    }
+
+    fn update_sensor(&mut self, change: SensorChange, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        if self.demo {
+            if let Some(sensor) = self.readout.as_mut().and_then(|data| data.sensor.as_mut()) {
+                match change {
+                    SensorChange::Lod(value) => sensor.lod = value,
+                    SensorChange::AngleSnap(value) => sensor.angle_snap = value,
+                    SensorChange::Ripple(value) => sensor.ripple = value,
+                }
+            }
+            cx.notify();
+            return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Applying sensor setting…".into());
+        let work = cx.background_executor().spawn(async move { device::set_sensor(&snapshot, change) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok(sensor) => {
+                        if let Some(data) = &mut view.readout { data.sensor = Some(sensor); }
+                        view.message = Some("Sensor setting confirmed by receiver.".into());
+                    }
+                    Err(error) => {
+                        if let Some(data) = &mut view.readout { data.sensor = None; }
                         view.message = Some(error);
                     }
                 }
@@ -439,10 +477,19 @@ impl Nibble {
         let lod = match sensor.map(|s| s.lod) { Some(1) => "1mm", Some(2) => "2mm", _ => "—" };
         let angle = sensor.map(|s| if s.angle_snap { "On" } else { "Off" }).unwrap_or("—");
         let ripple = sensor.map(|s| if s.ripple { "On" } else { "Off" }).unwrap_or("—");
+        let mut lod_field = field(p, "Lift Off Distance (LOD)", "1mm or 2mm", lod).id("sensor-lod");
+        let mut angle_field = field(p, "Angle Snap", "Straighten out slight angle offsets", angle).id("sensor-angle");
+        let mut ripple_field = field(p, "Ripple Control", "Smooth cursor jitter at high DPIs", ripple).id("sensor-ripple");
+        if let Some(sensor) = sensor.filter(|_| self.demo || self.experimental_write) {
+            let next_lod = if sensor.lod == 1 { 2 } else { 1 };
+            let next_angle = !sensor.angle_snap;
+            let next_ripple = !sensor.ripple;
+            lod_field = lod_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::Lod(next_lod), cx)));
+            angle_field = angle_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::AngleSnap(next_angle), cx)));
+            ripple_field = ripple_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::Ripple(next_ripple), cx)));
+        }
         let mouse = card(p).flex_1().child(heading("Mouse Settings"))
-            .child(field(p, "Lift Off Distance (LOD)", "1mm or 2mm", lod))
-            .child(field(p, "Angle Snap", "Straighten out slight angle offsets", angle))
-            .child(field(p, "Ripple Control", "Smooth cursor jitter at high DPIs", ripple))
+            .child(lod_field).child(angle_field).child(ripple_field)
             .child(field(p, "Debounce Time", "ms · higher reduces double-clicks", "—"))
             .child(field(p, "High-Speed Mode", "Local only", "—"));
         let power = card(p).flex_1().child(heading("Power & Sleep"))
@@ -491,7 +538,7 @@ impl Nibble {
                 .child(info_tile(p, "Method", "Static analysis + USB captures")));
         let capabilities = card(p).mt(px(16.0)).child(heading("What works"))
             .child(muted(p, if self.experimental_write {
-                "Experimental controls can change DPI levels, the active stage, and report rate. Other settings are previews."
+                "Experimental controls can change DPI levels, the active stage, report rate, and sensor settings. Other settings are previews."
             } else {
                 "This GPUI preview reads battery, DPI stages, and polling rate. Mouse settings cannot be changed."
             }));
@@ -513,7 +560,7 @@ impl Render for Nibble {
             else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
             else if let Some(message) = &self.message { message.clone() }
-            else if self.experimental_write { "Experimental mode · DPI levels, active stage, and report rate can change the receiver. Close other mouse software.".into() }
+            else if self.experimental_write { "Experimental mode · DPI, report rate, and sensor controls can change the receiver. Close other mouse software.".into() }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
         div().size_full().bg(rgb(p.bg)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
             .flex().flex_col().px(px(20.0)).pt(px(8.0))

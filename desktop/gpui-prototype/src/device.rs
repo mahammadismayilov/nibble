@@ -119,6 +119,39 @@ pub fn set_rate(snapshot: &Readout, rate: u16) -> Result<u16, String> {
     Ok(actual)
 }
 
+#[derive(Clone, Copy)]
+pub enum SensorChange { Lod(u8), AngleSnap(bool), Ripple(bool) }
+
+pub fn set_sensor(snapshot: &Readout, change: SensorChange) -> Result<Sensor, String> {
+    let (_api, mouse) = open_original_mouse(snapshot)?;
+    let mut sensor = query(&mouse, 0x16).and_then(|reply| parse_sensor(&reply))
+        .ok_or("Could not read sensor settings. No settings were sent.")?;
+    match change {
+        SensorChange::Lod(value) if (1..=2).contains(&value) => sensor.lod = value,
+        SensorChange::Lod(_) => return Err("Unsupported lift-off distance. No settings were sent.".into()),
+        SensorChange::AngleSnap(value) => sensor.angle_snap = value,
+        SensorChange::Ripple(value) => sensor.ripple = value,
+    }
+    let packet = sensor_packet(&sensor);
+    send_setting(&mouse, &packet)?;
+    let readback = query(&mouse, 0x16).and_then(|reply| parse_sensor(&reply))
+        .ok_or("Sensor change was sent, but the mouse did not confirm it. Refresh before trying again.")?;
+    if readback != sensor { return Err("The mouse returned different sensor settings. Refresh before trying again.".into()); }
+    Ok(readback)
+}
+
+fn sensor_packet(sensor: &Sensor) -> [u8; 33] {
+    let mut packet = [0u8; 33];
+    packet[1] = 0x06;
+    packet[3] = 1;
+    packet[4] = 5;
+    packet[5] = sensor.lod;
+    packet[6] = u8::from(sensor.angle_snap);
+    packet[7] = u8::from(sensor.ripple);
+    packet[32] = packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    packet
+}
+
 fn send_setting(mouse: &HidDevice, packet: &[u8; 33]) -> Result<(), String> {
     match mouse.write(packet) {
         Ok(33) => std::thread::sleep(Duration::from_millis(90)),
@@ -372,5 +405,8 @@ mod tests {
         assert!(matches_reply(0x16, &reply));
         reply[6] = 2;
         assert!(!matches_reply(0x16, &reply));
+        let packet = sensor_packet(&Sensor { lod: 2, angle_snap: true, ripple: false });
+        assert_eq!(&packet[..8], &[0, 6, 0, 1, 5, 2, 1, 0]);
+        assert_eq!(packet[32], 3);
     }
 }
