@@ -12,6 +12,7 @@ pub struct Readout {
     pub rate: Option<u16>,
     pub lighting: Option<Lighting>,
     pub sensor: Option<Sensor>,
+    pub keys: Option<[[u8; 3]; 6]>,
     pub vid: u16,
     pub pid: u16,
     pub path: Vec<u8>,
@@ -60,6 +61,9 @@ pub fn read_mouse() -> Result<Readout, String> {
     }
     if let Some(reply) = query(&mouse, 0x16) {
         result.sensor = parse_sensor(&reply);
+    }
+    if let Some(reply) = query(&mouse, 0x19) {
+        result.keys = parse_keymap(&reply);
     }
     Ok(result)
 }
@@ -156,6 +160,50 @@ pub fn set_sensor(snapshot: &Readout, change: SensorChange) -> Result<Sensor, St
         .ok_or("Sensor change was sent, but the mouse did not confirm it. Refresh before trying again.")?;
     if readback != sensor { return Err("The mouse returned different sensor settings. Refresh before trying again.".into()); }
     Ok(readback)
+}
+
+pub fn set_key(snapshot: &Readout, index: usize, label: &str) -> Result<[[u8; 3]; 6], String> {
+    if index == 0 { return Err("Left-click is locked to prevent losing mouse control.".into()); }
+    let wire = key_wire(label).ok_or("This button function is not available.")?;
+    let (_api, mouse) = open_original_mouse(snapshot)?;
+    let mut keys = query(&mouse, 0x19).and_then(|reply| parse_keymap(&reply))
+        .ok_or("Could not read the complete keymap. No settings were sent.")?;
+    let slot = keys.get_mut(index).ok_or("Unsupported mouse button. No settings were sent.")?;
+    *slot = wire;
+    let packet = keymap_packet(&keys);
+    send_setting(&mouse, &packet)?;
+    let readback = query(&mouse, 0x19).and_then(|reply| parse_keymap(&reply))
+        .ok_or("Key assignment was sent, but the mouse did not confirm it. Refresh before trying again.")?;
+    if readback != keys { return Err("The mouse returned a different keymap. Refresh before trying again.".into()); }
+    Ok(readback)
+}
+
+pub fn key_wire(label: &str) -> Option<[u8; 3]> {
+    Some(match label {
+        "Left-Click" => [0x10, 1, 0], "Right-Click" => [0x10, 2, 0], "Middle-Click" => [0x10, 4, 0],
+        "Backward" => [0x10, 8, 0], "Forward" => [0x10, 16, 0], "Double-Click" => [0x30, 0x32, 3],
+        "Scroll Up" => [0x20, 1, 0], "Scroll Down" => [0x20, 0xff, 0], "DPI Loop" => [0x40, 1, 0],
+        "Disable Key" => [0x60, 0, 0], "Lighting on/off" => [0x60, 4, 0],
+        "Volume +" => [0x80, 0xe9, 0], "Volume -" => [0x80, 0xea, 0], "Mute" => [0x80, 0xe2, 0],
+        "Play/Pause" => [0x80, 0xcd, 0], "Previous" => [0x80, 0xb6, 0], "Next" => [0x80, 0xb5, 0], "Stop" => [0x80, 0xb7, 0],
+        "Calculator" => [0x80, 0x92, 1], "My Computer" => [0x80, 0x94, 1], "Mail" => [0x80, 0x8a, 1],
+        "Screen Brightness +" => [0x80, 0x6f, 0], "Screen Brightness -" => [0x80, 0x70, 0],
+        "Refresh (F5)" => [0x70, 8, 7], "Switch Application" => [0x70, 8, 0x2b], "Copy" => [0x70, 1, 6], "Paste" => [0x70, 1, 0x19],
+        _ => return None,
+    })
+}
+
+pub fn key_label(wire: [u8; 3]) -> &'static str {
+    const LABELS: [&str; 25] = ["Left-Click", "Right-Click", "Middle-Click", "Backward", "Forward", "Double-Click", "Scroll Up", "Scroll Down", "DPI Loop", "Disable Key", "Lighting on/off", "Volume +", "Volume -", "Mute", "Play/Pause", "Previous", "Next", "Stop", "Calculator", "My Computer", "Mail", "Screen Brightness +", "Screen Brightness -", "Refresh (F5)", "Switch Application"];
+    LABELS.into_iter().chain(["Copy", "Paste"]).find(|label| key_wire(label) == Some(wire)).unwrap_or("Unknown")
+}
+
+fn keymap_packet(keys: &[[u8; 3]; 6]) -> [u8; 33] {
+    let mut packet = [0u8; 33];
+    packet[1] = 9; packet[3] = 1; packet[4] = 0x0f;
+    for (i, triple) in keys.iter().enumerate() { packet[5 + 3 * i..8 + 3 * i].copy_from_slice(triple); }
+    packet[32] = packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    packet
 }
 
 fn sensor_packet(sensor: &Sensor) -> [u8; 33] {
@@ -258,8 +306,19 @@ fn matches_reply(command: u8, reply: &[u8; 33]) -> bool {
         0x13 => parse_dpi(reply).is_some(),
         0x15 => parse_light(reply).is_some(),
         0x16 => parse_sensor(reply).is_some(),
+        0x19 => parse_keymap(reply).is_some(),
         _ => false,
     }
+}
+
+fn parse_keymap(buf: &[u8]) -> Option<[[u8; 3]; 6]> {
+    if buf.len() < 23 || buf[4] != 0x0f { return None; }
+    let mut keys = [[0u8; 3]; 6];
+    for (i, key) in keys.iter_mut().enumerate() {
+        key.copy_from_slice(&buf[5 + 3 * i..8 + 3 * i]);
+        if *key == [0, 0, 0] { return None; }
+    }
+    Some(keys)
 }
 
 fn parse_sensor(buf: &[u8]) -> Option<Sensor> {
@@ -437,4 +496,19 @@ mod tests {
         assert_eq!(&packet[..8], &[0, 6, 0, 1, 5, 2, 1, 0]);
         assert_eq!(packet[32], 3);
     }
+
+    #[test]
+    fn keymap_packet_preserves_other_buttons_and_unknown_functions() {
+        let mut keys = [[0x10, 1, 0], [0x10, 2, 0], [0x10, 4, 0], [0x10, 8, 0], [0x71, 42, 1], [0x40, 1, 0]];
+        keys[1] = key_wire("Volume +").unwrap();
+        let packet = keymap_packet(&keys);
+        assert_eq!(&packet[4..8], &[0x0f, 0x10, 1, 0]);
+        assert_eq!(&packet[17..20], &[0x71, 42, 1]);
+        assert_eq!(packet[32], packet[5..23].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)));
+        let mut reply = packet; reply[1] = 0x19;
+        assert_eq!(parse_keymap(&reply), Some(keys));
+        assert_eq!(key_label(keys[4]), "Unknown");
+        assert!(key_wire("Fire button").is_none());
+    }
 }
+

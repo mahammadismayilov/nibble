@@ -45,6 +45,7 @@ pub struct Nibble {
     dpi_focus: FocusHandle,
     dpi_input: Option<String>,
     dpi_replace_input: bool,
+    selected_key: usize,
     mouse: Arc<Image>,
     logo: Arc<Image>,
 }
@@ -60,6 +61,7 @@ impl Nibble {
             rate: Some(1000),
             lighting: Some(Lighting { mode: LightMode::Breathing, brightness: 0, speed: 6 }),
             sensor: Some(Sensor { lod: 1, angle_snap: false, ripple: false }),
+            keys: Some([[0x10, 1, 0], [0x10, 2, 0], [0x10, 4, 0], [0x10, 8, 0], [0x10, 16, 0], [0x40, 1, 0]]),
             vid: 0x249a,
             pid: 0x5c2f,
             ..Default::default()
@@ -77,6 +79,7 @@ impl Nibble {
             dpi_focus: cx.focus_handle(),
             dpi_input: None,
             dpi_replace_input: false,
+            selected_key: 0,
             mouse: Arc::new(Image::from_bytes(
                 ImageFormat::Png,
                 include_bytes!("../../../webapp/assets/device/mouse_aj179.png").to_vec(),
@@ -316,6 +319,45 @@ impl Nibble {
         cx.notify();
     }
 
+    fn assign_key(&mut self, label: &'static str, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        let index = self.selected_key;
+        if index == 0 {
+            self.message = Some("Left-click is locked to prevent losing mouse control.".into());
+            cx.notify();
+            return;
+        }
+        let Some(wire) = device::key_wire(label) else { return; };
+        if self.demo {
+            if let Some(keys) = self.readout.as_mut().and_then(|data| data.keys.as_mut()) { keys[index] = wire; }
+            cx.notify();
+            return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Applying button assignment…".into());
+        let work = cx.background_executor().spawn(async move { device::set_key(&snapshot, index, label) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok(keys) => {
+                        if let Some(data) = &mut view.readout { data.keys = Some(keys); }
+                        view.message = Some("Button assignment confirmed by receiver.".into());
+                    }
+                    Err(error) => {
+                        if let Some(data) = &mut view.readout { data.keys = None; }
+                        view.message = Some(error);
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
+    }
+
     fn header(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let status = if self.demo {
             "Sample data · No receiver access".to_string()
@@ -491,17 +533,24 @@ impl Nibble {
         div().flex().w_full().gap(px(16.0)).child(hero).child(rates)
     }
 
-    fn keys(&self, p: Palette) -> Div {
+    fn keys(&self, p: Palette, cx: &mut Context<Self>) -> Div {
+        let labels = ["Left Button", "Right Button", "Middle / Wheel", "Backward", "Forward", "DPI Button"];
+        let positions = [(35.0, 140.0), (286.0, 140.0), (178.0, 50.0), (0.0, 265.0), (10.0, 206.0), (265.0, 265.0)];
+        let keys = self.readout.as_ref().and_then(|data| data.keys.as_ref());
+        let mut mouse = div().relative().flex_1().flex().justify_center().items_center()
+            .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain));
+        for (index, (x, y)) in positions.into_iter().enumerate() {
+            let function = keys.map(|keys| device::key_label(keys[index])).unwrap_or("—");
+            let selected = self.selected_key == index;
+            mouse = mouse.child(div().id(("key-callout", index)).absolute().left(px(x)).top(px(y))
+                .cursor_pointer().rounded(px(8.0)).bg(rgb(if selected { p.accent_soft } else { p.card }))
+                .text_color(rgb(if selected { p.accent } else { p.text })).px(px(12.0)).py(px(8.0)).text_size(px(12.0))
+                .child(format!("{} · {function}", labels[index]))
+                .on_click(cx.listener(move |this, _, _, cx| { this.selected_key = index; cx.notify(); })));
+        }
         let left = div().flex_1().h(px(620.0)).flex().flex_col()
             .child(div().flex().justify_between().child(div().child(heading("Mouse Buttons")).child(muted(p, "Click a callout to rebind. Grayed options are not available yet."))).child(muted(p, "Reset all keys")))
-            .child(div().relative().flex_1().flex().justify_center().items_center()
-                .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
-                .child(callout(p, "Middle / Wheel · —", 178.0, 50.0))
-                .child(callout(p, "Left Button · —", 35.0, 140.0))
-                .child(callout(p, "Right Button · —", 286.0, 140.0))
-                .child(callout(p, "Forward · —", 10.0, 206.0))
-                .child(callout(p, "Backward · —", 0.0, 265.0))
-                .child(callout(p, "DPI Button · —", 265.0, 265.0)));
+            .child(mouse);
         let groups: [(&str, &[&str]); 4] = [
             ("MOUSE FEATURES", &["Left-Click", "Right-Click", "Middle-Click", "Forward", "Backward", "Double-Click", "Scroll Up", "Scroll Down", "DPI Loop", "Fire button", "Disable Key"]),
             ("MULTIMEDIA", &["Volume +", "Volume -", "Mute", "Play/Pause", "Previous", "Next", "Stop"]),
@@ -514,7 +563,14 @@ impl Nibble {
             for pair in items.chunks(2) {
                 let mut row = div().flex().gap(px(6.0));
                 for label in pair {
-                    row = row.child(div().flex_1().rounded(px(8.0)).px(px(12.0)).py(px(11.0)).bg(rgb(p.inset)).child(*label));
+                    let label = *label;
+                    let enabled = (self.demo || self.experimental_write) && keys.is_some() && self.selected_key != 0 && device::key_wire(label).is_some();
+                    let selected = keys.and_then(|keys| device::key_wire(label).map(|wire| keys[self.selected_key] == wire)).unwrap_or(false);
+                    let mut button = div().id(("key-function", label)).flex_1().rounded(px(8.0)).px(px(12.0)).py(px(11.0))
+                        .bg(rgb(if selected { p.accent_soft } else { p.inset }))
+                        .text_color(rgb(if selected { p.accent } else if enabled { p.text } else { p.muted })).child(label);
+                    if enabled { button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.assign_key(label, cx))); }
+                    row = row.child(button);
                 }
                 group = group.child(row);
             }
@@ -522,7 +578,8 @@ impl Nibble {
         }
         let right = card(p).flex_1().h(px(620.0)).flex().flex_col().gap(px(10.0))
             .child(heading("Button Function"))
-            .child(div().rounded(px(8.0)).p(px(12.0)).bg(rgb(p.accent_soft)).text_color(rgb(p.accent)).child("Select a button"))
+            .child(div().rounded(px(8.0)).p(px(12.0)).bg(rgb(p.accent_soft)).text_color(rgb(p.accent))
+                .child(format!("{} → {}", labels[self.selected_key], keys.map(|keys| device::key_label(keys[self.selected_key])).unwrap_or("Unavailable"))))
             .child(functions);
         div().flex().gap(px(16.0)).child(left).child(right)
     }
@@ -634,7 +691,7 @@ impl Render for Nibble {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = Palette::new(self.dark);
         let page = match self.screen {
-            0 => self.home(p), 1 => self.keys(p), 2 => self.dpi(p, cx), 3 => self.lighting(p),
+            0 => self.home(p), 1 => self.keys(p, cx), 2 => self.dpi(p, cx), 3 => self.lighting(p),
             4 => div().h(px(440.0)).flex().justify_center().items_center().text_color(rgb(p.muted)).child("Macros are not available in this version."),
             5 => self.settings(p, cx), _ => self.about(p),
         };
@@ -698,10 +755,6 @@ fn field(p: Palette, title: &'static str, subtitle: &'static str, value: &'stati
         .child(control)
 }
 
-fn callout(p: Palette, label: &'static str, left: f32, top: f32) -> Div {
-    div().absolute().left(px(left)).top(px(top)).rounded(px(8.0)).bg(rgb(p.card)).px(px(12.0)).py(px(8.0)).text_size(px(12.0)).child(label)
-}
-
 fn info_tile(p: Palette, label: &'static str, value: &'static str) -> Div {
     div().flex_1().min_h(px(100.0)).rounded(px(10.0)).bg(rgb(p.inset)).p(px(14.0)).flex().flex_col().gap(px(6.0))
         .child(div().text_size(px(11.0)).text_color(rgb(p.muted)).child(label))
@@ -719,3 +772,4 @@ fn slider_preview(p: Palette, label: &'static str, value: Option<String>) -> Div
         .child(div().flex_1().h(px(4.0)).rounded_full().bg(rgb(p.hover)))
         .child(div().w(px(36.0)).child(value.unwrap_or_else(|| "—".into())))
 }
+
