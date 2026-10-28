@@ -4,6 +4,7 @@ use gpui::{
     Window, div, img, prelude::*, px, relative, rgb,
 };
 use std::sync::Arc;
+use std::path::PathBuf;
 
 const TABS: [&str; 7] = ["Home", "Keys", "DPI", "Lighting", "Macro", "Settings", "About"];
 const STAGE_COLORS: [u32; 6] = [0xff0000, 0x00ff00, 0x0000ff, 0x00ffff, 0xffff00, 0x800080];
@@ -61,7 +62,7 @@ impl Nibble {
         });
         Self {
             screen: 0,
-            dark: true,
+            dark: demo || load_theme(),
             demo,
             experimental_write,
             scanning: !demo,
@@ -93,6 +94,18 @@ impl Nibble {
                 cx.notify();
             });
         }).detach();
+    }
+
+    fn set_theme(&mut self, dark: bool, cx: &mut Context<Self>) {
+        self.dark = dark;
+        if !self.demo {
+            if let Some(path) = theme_path() {
+                let saved = path.parent().is_some_and(|parent| std::fs::create_dir_all(parent).is_ok())
+                    && std::fs::write(path, if dark { "dark" } else { "light" }).is_ok();
+                if !saved { self.message = Some("Could not save appearance preference.".into()); }
+            }
+        }
+        cx.notify();
     }
 
     fn select_dpi(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -228,7 +241,7 @@ impl Nibble {
                 .child(div().font_weight(FontWeight::SEMIBOLD).child("Default Profile  ⌄"))
                 .child(div().id("theme").cursor_pointer().rounded(px(8.0)).px(px(9.0)).py(px(7.0)).text_size(px(18.0))
                     .child(if self.dark { "☼" } else { "☾" })
-                    .on_click(cx.listener(|this, _, _, cx| { this.dark = !this.dark; cx.notify(); })))
+                    .on_click(cx.listener(|this, _, _, cx| { this.set_theme(!this.dark, cx); })))
         ).child(tabs)
     }
 
@@ -420,7 +433,7 @@ impl Nibble {
         div().flex().gap(px(16.0)).items_start().child(image).child(card)
     }
 
-    fn settings(&self, p: Palette) -> Div {
+    fn settings(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let mouse = card(p).flex_1().child(heading("Mouse Settings"))
             .child(field(p, "Lift Off Distance (LOD)", "1mm or 2mm", "1mm    2mm"))
             .child(field(p, "Angle Snap", "Straighten out slight angle offsets", "—"))
@@ -437,7 +450,16 @@ impl Nibble {
                 .child(info_tile(p, "App", "Nibble 1.0.6"))
                 .child(info_tile(p, "Device", "—"))
                 .child(info_tile(p, "USB ID", "—")))
-            .child(field(p, "Appearance", "Light or dark interface theme", if self.dark { "Dark" } else { "Light" }))
+            .child(div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
+                .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Appearance"))
+                    .child(muted(p, "Light or dark interface theme")))
+                .child(div().flex().rounded(px(8.0)).bg(rgb(p.inset)).p(px(4.0))
+                    .child(div().id("theme-light").cursor_pointer().rounded(px(6.0)).px(px(12.0)).py(px(8.0))
+                        .bg(rgb(if !self.dark { p.hover } else { p.inset })).child("Light")
+                        .on_click(cx.listener(|this, _, _, cx| this.set_theme(false, cx))))
+                    .child(div().id("theme-dark").cursor_pointer().rounded(px(6.0)).px(px(12.0)).py(px(8.0))
+                        .bg(rgb(if self.dark { p.hover } else { p.inset })).child("Dark")
+                        .on_click(cx.listener(|this, _, _, cx| this.set_theme(true, cx)))))
             .child(field(p, "Left-click lock", "Prevents accidental rebinding of LMB", "—"))
             .child(field(p, "Profile backup", "Save or load this profile as a JSON file", "Export    Import"))
             .child(muted(p, "Restore factory settings"));
@@ -480,7 +502,7 @@ impl Render for Nibble {
         let page = match self.screen {
             0 => self.home(p), 1 => self.keys(p), 2 => self.dpi(p, cx), 3 => self.lighting(p),
             4 => div().h(px(440.0)).flex().justify_center().items_center().text_color(rgb(p.muted)).child("Macros are not available in this version."),
-            5 => self.settings(p), _ => self.about(p),
+            5 => self.settings(p, cx), _ => self.about(p),
         };
         let notice = if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
             else if self.scanning { "Reading the receiver…".to_string() }
@@ -498,6 +520,15 @@ impl Render for Nibble {
 
 fn heading(label: &'static str) -> Div {
     div().text_size(px(16.0)).font_weight(FontWeight::SEMIBOLD).child(label)
+}
+
+fn theme_path() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("Nibble-gpui").join("theme"))
+}
+
+fn load_theme() -> bool {
+    theme_path().and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|theme| theme.trim() != "light").unwrap_or(true)
 }
 
 fn muted(p: Palette, label: &'static str) -> Div {
