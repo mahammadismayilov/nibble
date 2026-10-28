@@ -50,6 +50,17 @@ impl Profiles {
         Ok(())
     }
 
+    pub fn set_local_setting(&mut self, key: &str, value: Value) -> Result<(), String> {
+        match key {
+            "fineDpi" | "highSpeed" | "lmbLock" if value.is_boolean() => (),
+            "mode" if value.as_str().is_some_and(|mode| mode == "usb" || mode == "24g") => (),
+            _ => return Err("Invalid local setting".into()),
+        }
+        let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
+        self.document["profiles"][index]["settings"][key] = value;
+        Ok(())
+    }
+
     pub fn import(&mut self, input: &str) -> Result<(), String> {
         let value: Value = serde_json::from_str(input).map_err(|e| format!("Invalid profile JSON: {e}"))?;
         let candidate = value.get("profile").unwrap_or(&value).clone();
@@ -148,6 +159,10 @@ mod tests {
         assert!(state.import(&invalid.to_string()).is_err());
         assert_eq!(state.document, before);
         assert!(Profiles::from_json("{bad").is_err());
+        assert!(state.set_local_setting("fineDpi", json!("not a boolean")).is_err());
+        assert_eq!(state.document, before);
+        state.set_local_setting("fineDpi", json!(true)).unwrap();
+        assert_eq!(state.current()["settings"]["fineDpi"], true);
     }
 
     #[test]

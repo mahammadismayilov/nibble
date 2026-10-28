@@ -153,6 +153,14 @@ impl Nibble {
         cx.notify();
     }
 
+    fn update_local_setting(&mut self, key: &'static str, value: serde_json::Value, cx: &mut Context<Self>) {
+        let previous = self.profiles.clone();
+        let result = self.profiles.set_local_setting(key, value).and_then(|_| self.save_profiles());
+        if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
+        else { self.message = Some("Profile setting saved locally.".into()); }
+        cx.notify();
+    }
+
     fn import_profile(&mut self, cx: &mut Context<Self>) {
         if !self.profiles_writable { self.message = Some("Saved profiles could not be loaded; import is disabled.".into()); cx.notify(); return; }
         let picker = cx.prompt_for_paths(PathPromptOptions { files: true, directories: false, multiple: false, prompt: Some("Import profile".into()) });
@@ -234,7 +242,8 @@ impl Nibble {
         } else if key == "escape" {
             self.dpi_input = None;
         } else if key == "enter" || key == "return" {
-            let value = input.parse::<u32>().ok().map(|value| ((value.min(26000) + 50) / 100 * 100).clamp(50, 26000) as u16);
+            let step = if self.profiles.current()["settings"]["fineDpi"].as_bool() == Some(true) { 50 } else { 100 };
+            let value = input.parse::<u32>().ok().map(|value| ((value.min(26000) + step / 2) / step * step).clamp(50, 26000) as u16);
             self.dpi_input = None;
             if let Some(value) = value { self.set_dpi_value(value, cx); }
             else { self.message = Some("Enter a DPI value between 50 and 26000.".into()); }
@@ -771,6 +780,10 @@ impl Nibble {
     }
 
     fn settings(&self, p: Palette, cx: &mut Context<Self>) -> Div {
+        let local = &self.profiles.current()["settings"];
+        let high_speed = local["highSpeed"].as_bool().unwrap_or(false);
+        let fine_dpi = local["fineDpi"].as_bool().unwrap_or(false);
+        let mode_24g = local["mode"].as_str() == Some("24g");
         let sensor = self.readout.as_ref().and_then(|data| data.sensor.as_ref());
         let lod = match sensor.map(|s| s.lod) { Some(1) => "1mm", Some(2) => "2mm", _ => "—" };
         let angle = sensor.map(|s| if s.angle_snap { "On" } else { "Off" }).unwrap_or("—");
@@ -789,12 +802,14 @@ impl Nibble {
         let mouse = card(p).flex_1().child(heading("Mouse Settings"))
             .child(lod_field).child(angle_field).child(ripple_field)
             .child(field(p, "Debounce Time", "ms · higher reduces double-clicks", "—"))
-            .child(field(p, "High-Speed Mode", "Local only", "—"));
+            .child(field(p, "High-Speed Mode", "Local only", if high_speed { "On" } else { "Off" }).id("local-high-speed").cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| this.update_local_setting("highSpeed", serde_json::json!(!high_speed), cx))));
         let power = card(p).flex_1().child(heading("Power & Sleep"))
             .child(field(p, "Sleep after", "Inactivity timeout", "—"))
             .child(field(p, "Move wake-up", "", "—"))
             .child(field(p, "Move to turn off light", "", "—"))
-            .child(field(p, "Connection mode (display)", "UI only", "USB    2.4G"));
+            .child(field(p, "Connection mode (display)", "UI only", if mode_24g { "2.4G" } else { "USB" }).id("local-mode").cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| this.update_local_setting("mode", serde_json::json!(if mode_24g { "usb" } else { "24g" }), cx))));
         let system = card(p).mt(px(12.0)).child(heading("System"))
             .child(div().flex().gap(px(10.0)).mt(px(10.0))
                 .child(info_tile(p, "App", "Nibble 1.0.6"))
@@ -822,7 +837,8 @@ impl Nibble {
             .child(muted(p, "Restore factory settings"));
         let experimental = card(p).mt(px(12.0)).child(heading("Experimental Features"))
             .child(muted(p, "Software-level unlocks that bypass OEM app limitations."))
-            .child(field(p, "50-Step DPI Granularity", "Unlock 50-step increments (default is 100)", "—"));
+            .child(field(p, "50-Step DPI Granularity", "Unlock 50-step increments (default is 100)", if fine_dpi { "On" } else { "Off" }).id("local-fine-dpi").cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| this.update_local_setting("fineDpi", serde_json::json!(!fine_dpi), cx))));
         div().flex().flex_col().child(div().flex().gap(px(12.0)).child(mouse).child(power)).child(system).child(experimental)
     }
 
