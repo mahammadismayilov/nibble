@@ -15,3 +15,6 @@ cargo run --release
 The prototype reports one snapshot and closes the HID handle. Use Refresh to
 read again. It does not continuously poll or reconnect.
 
+For visual comparisons without accessing a receiver, run the executable with
+`--demo`. This mode displays sample data and disables receiver scans.
+

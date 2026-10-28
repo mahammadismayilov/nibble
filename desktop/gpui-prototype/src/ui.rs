@@ -34,6 +34,7 @@ impl Palette {
 pub struct Nibble {
     screen: usize,
     dark: bool,
+    demo: bool,
     scanning: bool,
     readout: Option<Readout>,
     error: Option<String>,
@@ -42,13 +43,24 @@ pub struct Nibble {
 }
 
 impl Nibble {
-    pub fn new(cx: &mut Context<Self>) -> Self {
-        Self::scan(cx);
+    pub fn new(cx: &mut Context<Self>, demo: bool) -> Self {
+        if !demo { Self::scan(cx); }
+        let readout = demo.then(|| Readout {
+            battery: Some(80),
+            dpi: vec![400, 800, 1200, 1600, 2400, 10000],
+            active_dpi: Some(5),
+            dpi_count: Some(6),
+            rate: Some(1000),
+            vid: 0x249a,
+            pid: 0x5c2f,
+            ..Default::default()
+        });
         Self {
             screen: 0,
             dark: true,
-            scanning: true,
-            readout: None,
+            demo,
+            scanning: !demo,
+            readout,
             error: None,
             mouse: Arc::new(Image::from_bytes(
                 ImageFormat::Png,
@@ -77,7 +89,9 @@ impl Nibble {
     }
 
     fn header(&self, p: Palette, cx: &mut Context<Self>) -> Div {
-        let status = if self.scanning {
+        let status = if self.demo {
+            "Sample data · No receiver access".to_string()
+        } else if self.scanning {
             "Checking receiver".to_string()
         } else if let Some(data) = &self.readout {
             format!("AJAZZ AJ179 / AJ179P · {:04X}:{:04X} · Last read", data.vid, data.pid)
@@ -107,8 +121,8 @@ impl Nibble {
                 .child(div().ml(px(8.0)).font_weight(FontWeight::SEMIBOLD).child("AJAZZ AJ179 / AJ179P  ⌄"))
                 .child(div().flex_1().min_w(px(0.0)).text_size(px(12.0)).text_color(rgb(if self.readout.is_some() { p.success } else { p.muted })).child(format!("●  {status}")))
                 .child(div().id("refresh").cursor_pointer().rounded(px(8.0)).px(px(12.0)).py(px(8.0)).bg(rgb(p.accent_soft)).text_color(rgb(p.accent))
-                    .child(if self.scanning { "Checking…" } else { "Refresh" })
-                    .on_click(cx.listener(|this, _, _, cx| { if !this.scanning { this.scanning = true; Self::scan(cx); cx.notify(); } })))
+                    .child(if self.demo { "Demo" } else if self.scanning { "Checking…" } else { "Refresh" })
+                    .on_click(cx.listener(|this, _, _, cx| { if !this.demo && !this.scanning { this.scanning = true; Self::scan(cx); cx.notify(); } })))
                 .child(div().text_color(rgb(p.muted)).text_size(px(12.0)).child(format!("▰  {battery}")))
                 .child(div().font_weight(FontWeight::SEMIBOLD).child("Default Profile  ⌄"))
                 .child(div().id("theme").cursor_pointer().rounded(px(8.0)).px(px(9.0)).py(px(7.0)).text_size(px(18.0))
@@ -138,14 +152,16 @@ impl Nibble {
 
     fn dpi(&self, p: Palette) -> Div {
         let data = self.readout.as_ref();
+        let stage_count = data.and_then(|d| d.dpi_count).unwrap_or(6);
         let mut stage_rows = div().flex().flex_col().gap(px(8.0));
         for pair in 0..3 {
             let mut row = div().flex().gap(px(8.0));
             for i in pair * 2..pair * 2 + 2 {
+                if i >= stage_count { break; }
                 let value = data.and_then(|d| d.dpi.get(i)).map(u16::to_string).unwrap_or_else(|| "—".into());
                 let active = data.and_then(|d| d.active_dpi) == Some(i);
                 row = row.child(div().rounded(px(8.0)).bg(rgb(if active { p.accent_soft } else { p.inset })).px(px(10.0)).py(px(6.0)).flex().items_center().gap(px(8.0))
-                    .child(div().w(px(28.0)).h(px(28.0)).rounded(px(6.0)).bg(rgb(STAGE_COLORS[i])))
+                    .child(div().w(px(28.0)).h(px(28.0)).rounded(px(6.0)).bg(rgb(if self.demo { STAGE_COLORS[i] } else { p.muted })))
                     .child(div().text_size(px(12.0)).font_weight(FontWeight::SEMIBOLD).child(format!("Stage {}", i + 1)))
                     .child(div().font_family("JetBrains Mono").text_size(px(12.0)).text_color(rgb(p.muted)).child(format!("{value} DPI")))
                     .child(if active { "ACTIVE" } else { "" }));
@@ -155,15 +171,16 @@ impl Nibble {
         let mut track = div().relative().w_full().h(px(66.0))
             .child(div().absolute().top(px(41.0)).w_full().h(px(2.0)).bg(rgb(p.muted)));
         if let Some(data) = data {
-            for (i, value) in data.dpi.iter().enumerate().take(6) {
+            for (i, value) in data.dpi.iter().enumerate().take(stage_count) {
                 let position = dpi_position(*value);
                 let active = data.active_dpi == Some(i);
+                let color = if self.demo { STAGE_COLORS[i] } else { p.accent };
                 track = track
                     .child(div().absolute().left(relative(position)).top(px(0.0)).ml(px(-20.0))
                         .text_size(px(18.0)).font_weight(FontWeight::BOLD)
-                        .text_color(rgb(if active { STAGE_COLORS[i] } else { p.text })).child(value.to_string()))
+                        .text_color(rgb(if active { color } else { p.text })).child(value.to_string()))
                     .child(div().absolute().left(relative(position)).top(px(36.0)).ml(px(-6.0)).size(px(12.0))
-                        .rounded_full().bg(rgb(if active { STAGE_COLORS[i] } else { p.text })));
+                        .rounded_full().bg(rgb(if active { color } else { p.text })));
             }
         }
         let mut scale = div().relative().w_full().h(px(25.0)).text_size(px(12.0)).text_color(rgb(p.muted));
@@ -309,7 +326,8 @@ impl Render for Nibble {
             4 => div().h(px(440.0)).flex().justify_center().items_center().text_color(rgb(p.muted)).child("Macros are not available in this version."),
             5 => self.settings(p), _ => self.about(p),
         };
-        let notice = if self.scanning { "Reading the receiver…".to_string() }
+        let notice = if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
+            else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
         div().size_full().bg(rgb(p.bg)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
@@ -344,9 +362,16 @@ fn static_button(p: Palette, label: &'static str) -> Div {
 }
 
 fn field(p: Palette, title: &'static str, subtitle: &'static str, value: &'static str) -> Div {
+    let is_switch = matches!(title, "Angle Snap" | "Ripple Control" | "High-Speed Mode" | "Move wake-up" | "Move to turn off light" | "Left-click lock" | "50-Step DPI Granularity");
+    let control = if is_switch {
+        div().w(px(48.0)).h(px(28.0)).rounded_full().bg(rgb(p.hover)).flex().items_center().justify_center()
+            .text_color(rgb(p.muted)).child("—")
+    } else {
+        div().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0)).text_color(rgb(p.muted)).child(value)
+    };
     div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
         .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child(title)).child(muted(p, subtitle)))
-        .child(div().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0)).text_color(rgb(p.muted)).child(value))
+        .child(control)
 }
 
 fn callout(p: Palette, label: &'static str, left: f32, top: f32) -> Div {

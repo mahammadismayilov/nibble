@@ -8,6 +8,7 @@ pub struct Readout {
     pub sleeping: bool,
     pub dpi: Vec<u16>,
     pub active_dpi: Option<usize>,
+    pub dpi_count: Option<usize>,
     pub rate: Option<u16>,
     pub vid: u16,
     pub pid: u16,
@@ -15,10 +16,6 @@ pub struct Readout {
 
 // Only GET requests are sent. The handle is closed when the scan finishes.
 pub fn read_mouse() -> Result<Readout, String> {
-    read_mouse_with_trace(&mut Vec::new())
-}
-
-pub fn read_mouse_with_trace(trace: &mut Vec<String>) -> Result<Readout, String> {
     let api = HidApi::new().map_err(|error| error.to_string())?;
     let info = api.device_list().find(|device| {
         matches!(device.vendor_id(), 0x248a | 0x249a)
@@ -27,54 +24,70 @@ pub fn read_mouse_with_trace(trace: &mut Vec<String>) -> Result<Readout, String>
                 || device.usage_page() >= 0xff00)
     }).ok_or("AJ179P receiver not found")?;
     let mouse = info.open_device(&api).map_err(|error| format!("Receiver found, but could not open it: {error}"))?;
-    trace.push(format!("[DEBUG-gpui] interface {:04X}:{:04X} page={:04X} usage={:04X}", info.vendor_id(), info.product_id(), info.usage_page(), info.usage()));
     let mut result = Readout { vid: info.vendor_id(), pid: info.product_id(), ..Default::default() };
 
-    if let Some(reply) = query(&mouse, 0x10, trace) {
+    if let Some(reply) = query(&mouse, 0x10) {
         parse_battery(&reply, &mut result);
     }
-    if let Some(reply) = query(&mouse, 0x12, trace) {
+    if let Some(reply) = query(&mouse, 0x12) {
         result.rate = parse_rate(&reply);
     }
-    if let Some(reply) = query(&mouse, 0x13, trace) {
-        if let Some((active, stages)) = parse_dpi(&reply) {
+    if let Some(reply) = query(&mouse, 0x13) {
+        if let Some((active, count, stages)) = parse_dpi(&reply) {
             result.active_dpi = Some(active);
+            result.dpi_count = Some(count);
             result.dpi = stages;
         }
     }
     Ok(result)
 }
 
-fn query(device: &HidDevice, command: u8, trace: &mut Vec<String>) -> Option<[u8; 33]> {
+fn query(device: &HidDevice, command: u8) -> Option<[u8; 33]> {
     let mut request = [0u8; 33];
     request[1] = command;
-    for attempt in 0..5 {
-        if let Err(error) = device.write(&request) {
-            trace.push(format!("[DEBUG-gpui] {command:02X} attempt {attempt}: write error {error}"));
+    for _ in 0..5 {
+        if device.write(&request).is_err() {
             continue;
         }
-        trace.push(format!("[DEBUG-gpui] {command:02X} attempt {attempt}: wrote request"));
         let deadline = Instant::now() + Duration::from_millis(300);
         while Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now()).as_millis().max(1) as i32;
             let mut raw = [0u8; 65];
             let n = match device.read_timeout(&mut raw, remaining) {
                 Ok(n) => n,
-                Err(error) => { trace.push(format!("[DEBUG-gpui] {command:02X}: read error {error}")); break; }
+                Err(_) => break,
             };
-            if n == 0 { trace.push(format!("[DEBUG-gpui] {command:02X}: timeout")); continue; }
-            trace.push(format!("[DEBUG-gpui] {command:02X}: {} bytes {}", n, raw[..n].iter().map(|byte| format!("{byte:02X}")).collect::<Vec<_>>().join(" ")));
-            let mut reply = [0u8; 33];
-            if n >= 33 { reply.copy_from_slice(&raw[..33]); }
-            else { reply[1..1 + n.min(32)].copy_from_slice(&raw[..n.min(32)]); }
-            let response = if reply[0] == 0 { reply[1] } else { reply[0] };
-            if response == command || (reply[0] == 0 && reply[1] == 0)
-                || (command == 0x10 && response == 0xc0) {
+            if n == 0 { continue; }
+            let reply = normalize_reply(&raw[..n]);
+            if matches_reply(command, &reply) {
                 return Some(reply);
             }
         }
     }
     None
+}
+
+fn normalize_reply(raw: &[u8]) -> [u8; 33] {
+    let mut reply = [0u8; 33];
+    if raw.len() >= 33 {
+        reply.copy_from_slice(&raw[..33]);
+    } else {
+        reply[1..1 + raw.len()].copy_from_slice(raw);
+    }
+    reply
+}
+
+fn matches_reply(command: u8, reply: &[u8; 33]) -> bool {
+    let response = if reply[0] == 0 { reply[1] } else { reply[0] };
+    if response != command && response != 0 && !(command == 0x10 && response == 0xc0) {
+        return false;
+    }
+    match command {
+        0x10 => response == 0x10 || response == 0xc0,
+        0x12 => parse_rate(reply).is_some(),
+        0x13 => parse_dpi(reply).is_some(),
+        _ => false,
+    }
 }
 
 fn parse_battery(buf: &[u8], result: &mut Readout) {
@@ -110,9 +123,15 @@ fn parse_rate(buf: &[u8]) -> Option<u16> {
     match buf[5] { 8 => Some(125), 4 => Some(250), 2 => Some(500), 1 => Some(1000), _ => None }
 }
 
-fn parse_dpi(buf: &[u8]) -> Option<(usize, Vec<u16>)> {
+fn parse_dpi(buf: &[u8]) -> Option<(usize, usize, Vec<u16>)> {
     if buf.len() < 30 { return None; }
-    let meta = buf.iter().take(8).position(|byte| *byte == 0x25).unwrap_or(4);
+    // A normal GET reply places metadata at offset 4, even when the firmware
+    // reports 0x19 instead of 0x25. Do not mistake a DPI value of 0x25 for metadata.
+    let meta = if buf[0] == 0 && (buf[1] == 0x13 || buf[1] == 0) {
+        4
+    } else {
+        buf.iter().take(8).position(|byte| *byte == 0x25).unwrap_or(4)
+    };
     let packed = *buf.get(meta + 1)?;
     let active = usize::from(packed >> 4);
     let count = usize::from(packed & 0x0f);
@@ -125,7 +144,7 @@ fn parse_dpi(buf: &[u8]) -> Option<(usize, Vec<u16>)> {
         if wire > 600 { return None; }
         stages.push((wire + 1) * 50);
     }
-    if active >= stages.len() || stages.len() < count { None } else { Some((active, stages)) }
+    if active >= stages.len() || stages.len() < count { None } else { Some((active, count, stages)) }
 }
 
 #[cfg(test)]
@@ -141,7 +160,7 @@ mod tests {
             let offset = 6 + index * 4;
             reply[offset..offset + 2].copy_from_slice(&wire.to_le_bytes());
         }
-        assert_eq!(parse_dpi(&reply), Some((1, vec![400, 800, 1200, 1600, 2400, 3200])));
+        assert_eq!(parse_dpi(&reply), Some((1, 6, vec![400, 800, 1200, 1600, 2400, 3200])));
         reply[5] = 0x66;
         assert_eq!(parse_dpi(&reply), None);
     }
@@ -152,6 +171,22 @@ mod tests {
         assert_eq!(battery_percent(255), None);
         assert_eq!(parse_rate(&[0, 0x12, 0, 0, 1, 1]), Some(1000));
         assert_eq!(parse_rate(&[0, 0x12, 0, 0, 0, 1]), None);
+    }
+
+    #[test]
+    fn decodes_the_aj179p_receiver_response_and_ignores_bad_acknowledgements() {
+        let raw = [0x13, 0, 1, 0x19, 0x56, 7, 0, 7, 0, 15, 0, 15, 0, 23, 0, 23, 0,
+            31, 0, 31, 0, 47, 0, 47, 0, 199, 0, 199, 0, 0, 0, 0xda];
+        let reply = normalize_reply(&raw);
+        assert!(matches_reply(0x13, &reply));
+        assert_eq!(parse_dpi(&reply), Some((5, 6, vec![400, 800, 1200, 1600, 2400, 10000])));
+        assert!(!matches_reply(0x12, &reply));
+        assert!(!matches_reply(0x13, &[0; 33]));
+
+        let mut value_containing_25 = reply;
+        value_containing_25[6] = 0x25;
+        value_containing_25[8] = 0x25;
+        assert_eq!(parse_dpi(&value_containing_25).unwrap().2[0], 1900);
     }
 }
 
