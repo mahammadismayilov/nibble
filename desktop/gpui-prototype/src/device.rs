@@ -15,6 +15,10 @@ pub struct Readout {
 
 // Only GET requests are sent. The handle is closed when the scan finishes.
 pub fn read_mouse() -> Result<Readout, String> {
+    read_mouse_with_trace(&mut Vec::new())
+}
+
+pub fn read_mouse_with_trace(trace: &mut Vec<String>) -> Result<Readout, String> {
     let api = HidApi::new().map_err(|error| error.to_string())?;
     let info = api.device_list().find(|device| {
         matches!(device.vendor_id(), 0x248a | 0x249a)
@@ -23,15 +27,16 @@ pub fn read_mouse() -> Result<Readout, String> {
                 || device.usage_page() >= 0xff00)
     }).ok_or("AJ179P receiver not found")?;
     let mouse = info.open_device(&api).map_err(|error| format!("Receiver found, but could not open it: {error}"))?;
+    trace.push(format!("[DEBUG-gpui] interface {:04X}:{:04X} page={:04X} usage={:04X}", info.vendor_id(), info.product_id(), info.usage_page(), info.usage()));
     let mut result = Readout { vid: info.vendor_id(), pid: info.product_id(), ..Default::default() };
 
-    if let Some(reply) = query(&mouse, 0x10) {
+    if let Some(reply) = query(&mouse, 0x10, trace) {
         parse_battery(&reply, &mut result);
     }
-    if let Some(reply) = query(&mouse, 0x12) {
+    if let Some(reply) = query(&mouse, 0x12, trace) {
         result.rate = parse_rate(&reply);
     }
-    if let Some(reply) = query(&mouse, 0x13) {
+    if let Some(reply) = query(&mouse, 0x13, trace) {
         if let Some((active, stages)) = parse_dpi(&reply) {
             result.active_dpi = Some(active);
             result.dpi = stages;
@@ -40,17 +45,25 @@ pub fn read_mouse() -> Result<Readout, String> {
     Ok(result)
 }
 
-fn query(device: &HidDevice, command: u8) -> Option<[u8; 33]> {
+fn query(device: &HidDevice, command: u8, trace: &mut Vec<String>) -> Option<[u8; 33]> {
     let mut request = [0u8; 33];
     request[1] = command;
-    for _ in 0..5 {
-        if device.write(&request).is_err() { continue; }
+    for attempt in 0..5 {
+        if let Err(error) = device.write(&request) {
+            trace.push(format!("[DEBUG-gpui] {command:02X} attempt {attempt}: write error {error}"));
+            continue;
+        }
+        trace.push(format!("[DEBUG-gpui] {command:02X} attempt {attempt}: wrote request"));
         let deadline = Instant::now() + Duration::from_millis(300);
         while Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now()).as_millis().max(1) as i32;
             let mut raw = [0u8; 65];
-            let Ok(n) = device.read_timeout(&mut raw, remaining) else { break };
-            if n == 0 { continue; }
+            let n = match device.read_timeout(&mut raw, remaining) {
+                Ok(n) => n,
+                Err(error) => { trace.push(format!("[DEBUG-gpui] {command:02X}: read error {error}")); break; }
+            };
+            if n == 0 { trace.push(format!("[DEBUG-gpui] {command:02X}: timeout")); continue; }
+            trace.push(format!("[DEBUG-gpui] {command:02X}: {} bytes {}", n, raw[..n].iter().map(|byte| format!("{byte:02X}")).collect::<Vec<_>>().join(" ")));
             let mut reply = [0u8; 33];
             if n >= 33 { reply.copy_from_slice(&raw[..33]); }
             else { reply[1..1 + n.min(32)].copy_from_slice(&raw[..n.min(32)]); }

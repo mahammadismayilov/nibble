@@ -1,7 +1,7 @@
 use crate::device::{self, Readout};
 use gpui::{
     Context, Div, FontWeight, Image, ImageFormat, IntoElement, ObjectFit, Render, StyledImage,
-    Window, div, img, prelude::*, px, rgb,
+    Window, div, img, prelude::*, px, relative, rgb,
 };
 use std::sync::Arc;
 
@@ -55,8 +55,8 @@ impl Nibble {
                 include_bytes!("../../../webapp/assets/device/mouse_aj179.png").to_vec(),
             )),
             logo: Arc::new(Image::from_bytes(
-                ImageFormat::Svg,
-                include_bytes!("../../../webapp/assets/nibble.svg").to_vec(),
+                ImageFormat::Png,
+                include_bytes!("../../src-tauri/icons/128x128.png").to_vec(),
             )),
         }
     }
@@ -125,7 +125,7 @@ impl Nibble {
         let battery = data.and_then(|d| d.battery).map(|value| format!("{value}%")).unwrap_or_else(|| "—".into());
         let battery_sub = match data { Some(d) if d.sleeping => "Sleeping", Some(d) if d.charging => "Charging", Some(d) if d.battery.is_some() => "Last read", _ => "Unavailable" };
         let hero = div().flex_1().h(px(560.0)).flex().flex_col().items_center().justify_center()
-            .child(img(self.mouse.clone()).w(px(280.0)).h(px(400.0)).object_fit(ObjectFit::Contain))
+            .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
             .child(div().mt(px(18.0)).text_size(px(24.0)).font_weight(FontWeight::SEMIBOLD).child("AJAZZ AJ179 / AJ179P"))
             .child(div().mt(px(6.0)).text_size(px(14.0)).text_color(rgb(p.muted)).child("PAW3395 sensor"));
         let stats = div().flex_1().h(px(560.0)).flex().flex_col()
@@ -152,15 +152,26 @@ impl Nibble {
             }
             stage_rows = stage_rows.child(row);
         }
-        let mut values = div().flex().justify_between().w_full();
-        for i in 0..6 {
-            let value = data.and_then(|d| d.dpi.get(i)).map(u16::to_string).unwrap_or_else(|| "—".into());
-            values = values.child(div().font_weight(FontWeight::BOLD).text_size(px(18.0)).child(value));
+        let mut track = div().relative().w_full().h(px(66.0))
+            .child(div().absolute().top(px(41.0)).w_full().h(px(2.0)).bg(rgb(p.muted)));
+        if let Some(data) = data {
+            for (i, value) in data.dpi.iter().enumerate().take(6) {
+                let position = dpi_position(*value);
+                let active = data.active_dpi == Some(i);
+                track = track
+                    .child(div().absolute().left(relative(position)).top(px(0.0)).ml(px(-20.0))
+                        .text_size(px(18.0)).font_weight(FontWeight::BOLD)
+                        .text_color(rgb(if active { STAGE_COLORS[i] } else { p.text })).child(value.to_string()))
+                    .child(div().absolute().left(relative(position)).top(px(36.0)).ml(px(-6.0)).size(px(12.0))
+                        .rounded_full().bg(rgb(if active { STAGE_COLORS[i] } else { p.text })));
+            }
         }
-        let chart = div().mt(px(55.0)).h(px(160.0)).px(px(12.0)).flex().flex_col().justify_center().gap(px(16.0))
-            .child(values)
-            .child(div().h(px(2.0)).w_full().bg(rgb(p.muted)))
-            .child(div().flex().justify_between().text_size(px(12.0)).text_color(rgb(p.muted)).child("200").child("1000").child("2000").child("3000").child("4000").child("6000").child("8000").child("26000"));
+        let mut scale = div().relative().w_full().h(px(25.0)).text_size(px(12.0)).text_color(rgb(p.muted));
+        for value in [200u16, 1000, 2000, 3000, 4000, 6000, 8000, 26000] {
+            scale = scale.child(div().absolute().left(relative(dpi_position(value))).ml(px(-12.0)).child(value.to_string()));
+        }
+        let chart = div().mt(px(55.0)).h(px(160.0)).px(px(12.0)).flex().flex_col().justify_center()
+            .child(track).child(scale);
         let levels = div().flex().items_center().gap(px(8.0)).text_size(px(12.0)).text_color(rgb(p.muted)).child("DPI Levels:")
             .child(div().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(10.0)).child("1     2     3     4     5     6"));
         let hero = card(p).flex_1().h(px(470.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
@@ -193,7 +204,7 @@ impl Nibble {
         let left = div().flex_1().h(px(620.0)).flex().flex_col()
             .child(div().flex().justify_between().child(div().child(heading("Mouse Buttons")).child(muted(p, "Click a callout to rebind. Grayed options are not available yet."))).child(muted(p, "Reset all keys")))
             .child(div().relative().flex_1().flex().justify_center().items_center()
-                .child(img(self.mouse.clone()).w(px(280.0)).h(px(400.0)).object_fit(ObjectFit::Contain))
+                .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
                 .child(callout(p, "Middle / Wheel · —", 178.0, 50.0))
                 .child(callout(p, "Left Button · —", 35.0, 140.0))
                 .child(callout(p, "Right Button · —", 286.0, 140.0))
@@ -220,7 +231,7 @@ impl Nibble {
 
     fn lighting(&self, p: Palette) -> Div {
         let image = div().w(px(410.0)).h(px(560.0)).flex().flex_col().items_center().justify_center()
-            .child(img(self.mouse.clone()).w(px(280.0)).h(px(400.0)).object_fit(ObjectFit::Contain))
+            .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
             .child(div().mt(px(18.0)).child(muted(p, "Live preview of the selected effect")));
         let mut effects = div().flex().flex_col().gap(px(8.0));
         for row in [["Flowing light", "Breathing", "Constant light"], ["Neon", "Colorful waves", "Close"]] {
@@ -234,8 +245,8 @@ impl Nibble {
                 .child(muted(p, "Reset lighting")))
             .child(effects)
             .child(muted(p, "Lighting settings are not available in the preview."))
-            .child(field(p, "Brightness", "", "—"))
-            .child(field(p, "Speed", "", "—"))
+            .child(slider_preview(p, "Brightness"))
+            .child(slider_preview(p, "Speed"))
             .child(field(p, "Color", "", "—"));
         div().flex().gap(px(16.0)).items_start().child(image).child(card)
     }
@@ -346,5 +357,17 @@ fn info_tile(p: Palette, label: &'static str, value: &'static str) -> Div {
     div().flex_1().min_h(px(100.0)).rounded(px(10.0)).bg(rgb(p.inset)).p(px(14.0)).flex().flex_col().gap(px(6.0))
         .child(div().text_size(px(11.0)).text_color(rgb(p.muted)).child(label))
         .child(div().font_weight(FontWeight::SEMIBOLD).child(value))
+}
+
+fn dpi_position(value: u16) -> f32 {
+    let minimum = 100.0f32.ln();
+    ((f32::from(value).clamp(100.0, 26000.0).ln() - minimum) / (26000.0f32.ln() - minimum)).clamp(0.03, 0.97)
+}
+
+fn slider_preview(p: Palette, label: &'static str) -> Div {
+    div().flex().items_center().gap(px(14.0)).h(px(34.0)).text_size(px(14.0)).text_color(rgb(p.muted))
+        .child(div().w(px(100.0)).child(label))
+        .child(div().flex_1().h(px(4.0)).rounded_full().bg(rgb(p.hover)))
+        .child(div().w(px(36.0)).child("—"))
 }
 
