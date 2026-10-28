@@ -1,7 +1,7 @@
 # Nibble GPUI prototype
 
 An isolated interface preview for AJ179 / AJ179P CompX receivers. By default it
-reads battery, DPI, and polling rate without changing settings. It does not
+reads battery, DPI, polling rate, and supported lighting and sensor states without changing settings. It does not
 replace the desktop app or save profiles. Close other mouse software before
 testing because concurrent HID reads can interfere.
 
@@ -12,13 +12,13 @@ cargo run --release
 ```
 
 The prototype reports one snapshot and closes the HID handle. Use Refresh to
-read again. It does not continuously poll or reconnect.
+read again. It does not continuously poll or reconnect. Appearance selection is
+saved separately from the original desktop app.
 
 For visual comparisons without accessing a receiver, run the executable with
 `--demo`. This mode displays sample data and disables receiver scans.
 
-`--experimental-write` enables DPI-level, active-stage, and report-rate selectors. The
+`--experimental-write` enables DPI-level, active-stage, report-rate, and sensor controls. The
 app reads the current settings before sending a change and checks the response
 afterward. These writes have packet tests but have not yet been tested on a
 physical mouse. Other settings are still previews.
-
