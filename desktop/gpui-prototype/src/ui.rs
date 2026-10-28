@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::path::PathBuf;
 
 const TABS: [&str; 7] = ["Home", "Keys", "DPI", "Lighting", "Macro", "Settings", "About"];
-const STAGE_COLORS: [u32; 6] = [0xff0000, 0x00ff00, 0x0000ff, 0x00ffff, 0xffff00, 0x800080];
 
 #[derive(Clone, Copy)]
 struct Palette {
@@ -591,6 +590,9 @@ impl Nibble {
 
     fn dpi(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let data = self.readout.as_ref();
+        let profile_colors: Vec<u32> = self.profiles.current()["dpiStages"].as_array().into_iter().flatten()
+            .map(|stage| stage["color"].as_str().and_then(|color| color.strip_prefix('#'))
+                .and_then(|color| u32::from_str_radix(color, 16).ok()).unwrap_or(p.muted)).collect();
         let stage_count = data.and_then(|d| d.dpi_count).unwrap_or(6);
         let dpi_editable = (self.demo || self.experimental_write) && data.is_some_and(|d| d.dpi_count.is_some() && d.dpi.len() == 6);
         let rate_editable = (self.demo || self.experimental_write) && data.and_then(|d| d.rate).is_some();
@@ -602,7 +604,7 @@ impl Nibble {
                 let value = data.and_then(|d| d.dpi.get(i)).map(u16::to_string).unwrap_or_else(|| "—".into());
                 let active = data.and_then(|d| d.active_dpi) == Some(i);
                 let mut stage = div().id(("dpi-stage", i)).rounded(px(8.0)).bg(rgb(if active { p.accent_soft } else { p.inset })).px(px(10.0)).py(px(6.0)).flex().items_center().gap(px(8.0))
-                    .child(div().w(px(28.0)).h(px(28.0)).rounded(px(6.0)).bg(rgb(if self.demo { STAGE_COLORS[i] } else { p.muted })))
+                    .child(div().w(px(28.0)).h(px(28.0)).rounded(px(6.0)).bg(rgb(profile_colors.get(i).copied().unwrap_or(p.muted))))
                     .child(div().text_size(px(12.0)).font_weight(FontWeight::SEMIBOLD).child(format!("Stage {}", i + 1)))
                     .child(div().font_family("JetBrains Mono").text_size(px(12.0)).text_color(rgb(if active { p.accent } else { p.muted })).child(format!("{value} DPI")));
                 if active {
@@ -621,7 +623,7 @@ impl Nibble {
             for (i, value) in data.dpi.iter().enumerate().take(stage_count) {
                 let position = dpi_position(*value);
                 let active = data.active_dpi == Some(i);
-                let color = if self.demo { STAGE_COLORS[i] } else { p.accent };
+                let color = profile_colors.get(i).copied().unwrap_or(p.accent);
                 let mut number = div().id(("dpi-number", i)).absolute().left(relative(position)).top(px(0.0)).ml(px(-20.0))
                     .text_size(px(18.0)).font_weight(FontWeight::BOLD)
                     .text_color(rgb(if active { color } else { p.text })).child(value.to_string());
@@ -654,8 +656,8 @@ impl Nibble {
         let levels = div().flex().items_center().gap(px(8.0)).text_size(px(12.0)).text_color(rgb(p.muted)).child("DPI Levels:").child(level_buttons);
         let selected_value = self.dpi_input.clone().or_else(|| data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i)))
             .map(u16::to_string)).unwrap_or_else(|| "—".into());
-        let selected_color = data.and_then(|d| d.active_dpi).filter(|_| self.demo)
-            .and_then(|i| STAGE_COLORS.get(i)).copied().unwrap_or(p.muted);
+        let selected_color = data.and_then(|d| d.active_dpi)
+            .and_then(|i| profile_colors.get(i)).copied().unwrap_or(p.muted);
         let mut dpi_input = div().id("dpi-value").track_focus(&self.dpi_focus).w(px(90.0)).rounded(px(8.0))
             .border_1().border_color(rgb(if self.dpi_input.is_some() { p.accent } else { p.inset })).bg(rgb(p.inset)).px(px(10.0)).py(px(10.0))
             .font_family("JetBrains Mono").text_color(rgb(p.text)).child(selected_value);
