@@ -45,6 +45,10 @@ pub struct Nibble {
     dpi_focus: FocusHandle,
     dpi_input: Option<String>,
     dpi_replace_input: bool,
+    color_focus: FocusHandle,
+    color_input: Option<String>,
+    color_stage: Option<usize>,
+    color_replace_input: bool,
     selected_key: usize,
     content_scroll: ScrollHandle,
     profiles: Profiles,
@@ -93,6 +97,10 @@ impl Nibble {
             dpi_focus: cx.focus_handle(),
             dpi_input: None,
             dpi_replace_input: false,
+            color_focus: cx.focus_handle(),
+            color_input: None,
+            color_stage: None,
+            color_replace_input: false,
             selected_key: 0,
             content_scroll: ScrollHandle::new(),
             profiles,
@@ -165,6 +173,8 @@ impl Nibble {
 
     fn select_profile(&mut self, index: usize, cx: &mut Context<Self>) {
         if self.scanning || self.applying { self.message = Some("Wait until the current device operation finishes.".into()); cx.notify(); return; }
+        self.color_input = None;
+        self.color_stage = None;
         let previous = self.profiles.clone();
         let result = self.profiles.select(index).and_then(|_| self.save_profiles());
         if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
@@ -202,7 +212,11 @@ impl Nibble {
                         else { std::fs::read_to_string(&path).map_err(|e| e.to_string()) }
                     }).and_then(|data| view.profiles.import(&data)).and_then(|_| view.save_profiles());
                     match result {
-                        Ok(()) => view.message = Some("Profile imported locally. Mouse settings were not changed.".into()),
+                        Ok(()) => {
+                            view.color_input = None;
+                            view.color_stage = None;
+                            view.message = Some("Profile imported locally. Mouse settings were not changed.".into());
+                        }
                         Err(error) => { view.profiles = previous; view.message = Some(format!("Could not import profile: {error}")); }
                     }
                     cx.notify();
@@ -239,11 +253,15 @@ impl Nibble {
 
     fn select_dpi(&mut self, index: usize, cx: &mut Context<Self>) {
         self.dpi_input = None;
+        self.color_input = None;
+        self.color_stage = None;
         self.update_dpi(index, false, cx);
     }
 
     fn select_dpi_count(&mut self, count: usize, cx: &mut Context<Self>) {
         self.dpi_input = None;
+        self.color_input = None;
+        self.color_stage = None;
         self.update_dpi(count, true, cx);
     }
 
@@ -253,6 +271,48 @@ impl Nibble {
         self.dpi_input = Some(value.to_string());
         self.dpi_replace_input = true;
         window.focus(&self.dpi_focus);
+        cx.notify();
+    }
+
+    fn edit_color(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.scanning || self.applying || !self.profiles_writable { return; }
+        let Some(stage) = self.readout.as_ref().and_then(|data| data.active_dpi) else { return; };
+        let Some(color) = self.profiles.current()["dpiStages"][stage]["color"].as_str() else { return; };
+        self.color_input = Some(color.to_string());
+        self.color_stage = Some(stage);
+        self.color_replace_input = true;
+        window.focus(&self.color_focus);
+        cx.notify();
+    }
+
+    fn handle_color_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        let Some(input) = self.color_input.as_mut() else { return; };
+        let key = event.keystroke.key.as_str();
+        if event.keystroke.modifiers.control && key.eq_ignore_ascii_case("a") {
+            self.color_replace_input = true;
+        } else if key == "escape" {
+            self.color_input = None;
+            self.color_stage = None;
+        } else if key == "enter" || key == "return" {
+            let value = input.clone();
+            let stage = self.color_stage.take();
+            self.color_input = None;
+            if let Some(stage) = stage {
+                let previous = self.profiles.clone();
+                let result = self.profiles.set_dpi_color(stage, &value).and_then(|_| self.save_profiles());
+                if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
+                else { self.message = Some("DPI color saved in the profile. Mouse colors were not changed.".into()); }
+            }
+        } else if key == "backspace" {
+            if self.color_replace_input { input.clear(); self.color_replace_input = false; } else { input.pop(); }
+        } else if !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt {
+            let typed = event.keystroke.key_char.as_deref().unwrap_or(key);
+            if typed.len() == 1 && (typed.as_bytes()[0].is_ascii_hexdigit() || typed == "#") {
+                if self.color_replace_input { input.clear(); self.color_replace_input = false; }
+                if input.len() < 7 { input.push_str(typed); }
+            }
+        }
+        cx.stop_propagation();
         cx.notify();
     }
 
@@ -574,7 +634,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.color_input = None; this.color_stage = None; cx.notify();
                     })),
             );
         }
@@ -693,6 +753,18 @@ impl Nibble {
             .map(u16::to_string)).unwrap_or_else(|| "—".into());
         let selected_color = data.and_then(|d| d.active_dpi)
             .and_then(|i| profile_colors.get(i)).copied().unwrap_or(p.muted);
+        let mut color_control = div().id("dpi-color").track_focus(&self.color_focus)
+            .rounded(px(4.0)).bg(rgb(selected_color)).size(px(26.0));
+        if self.profiles_writable && data.and_then(|d| d.active_dpi).is_some() {
+            color_control = color_control.cursor_pointer()
+                .on_click(cx.listener(|this, _, window, cx| this.edit_color(window, cx)))
+                .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| this.handle_color_key(event, cx)));
+        }
+        if let Some(value) = &self.color_input {
+            color_control = color_control.w(px(90.0)).h(px(38.0)).px(px(6.0)).flex().items_center()
+                .bg(rgb(p.inset)).border_1().border_color(rgb(p.accent))
+                .font_family("JetBrains Mono").text_color(rgb(p.text)).child(value.clone());
+        }
         let mut dpi_input = div().id("dpi-value").track_focus(&self.dpi_focus).w(px(90.0)).rounded(px(8.0))
             .border_1().border_color(rgb(if self.dpi_input.is_some() { p.accent } else { p.inset })).bg(rgb(p.inset)).px(px(10.0)).py(px(10.0))
             .font_family("JetBrains Mono").text_color(rgb(p.text)).child(selected_value);
@@ -705,7 +777,7 @@ impl Nibble {
             .child("DPI Value")
             .child(dpi_input)
             .child("LED Color")
-            .child(div().size(px(26.0)).rounded(px(4.0)).bg(rgb(selected_color)));
+            .child(color_control);
         let hero = card(p).flex_1().h(px(520.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
             .child(div().flex().items_center().justify_between()
                 .child(div().flex().items_center().gap(px(20.0)).child(heading("DPI Sensitivity")).child(levels))
@@ -961,7 +1033,8 @@ impl Render for Nibble {
             4 => div().h(px(440.0)).flex().justify_center().items_center().text_color(rgb(p.muted)).child("Macros are not available in this version."),
             5 => self.settings(p, cx), _ => self.about(p),
         };
-        let notice = if self.dpi_input.is_some() { "Enter a DPI value, then press Enter to apply or Escape to cancel.".to_string() }
+        let notice = if self.color_input.is_some() { "Enter a profile color as #RRGGBB, then press Enter to save or Escape to cancel. This does not change the mouse.".to_string() }
+            else if self.dpi_input.is_some() { "Enter a DPI value, then press Enter to apply or Escape to cancel.".to_string() }
             else if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
             else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }

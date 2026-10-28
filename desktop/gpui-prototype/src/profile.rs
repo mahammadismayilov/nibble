@@ -62,6 +62,16 @@ impl Profiles {
         Ok(())
     }
 
+    pub fn set_dpi_color(&mut self, stage: usize, color: &str) -> Result<(), String> {
+        let bytes = color.as_bytes();
+        if stage >= 6 || bytes.len() != 7 || bytes[0] != b'#' || !bytes[1..].iter().all(u8::is_ascii_hexdigit) {
+            return Err("Enter a color in #RRGGBB format".into());
+        }
+        let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
+        self.document["profiles"][index]["dpiStages"][stage]["color"] = json!(color.to_ascii_uppercase());
+        Ok(())
+    }
+
     pub fn power(&self) -> Option<PowerSettings> {
         let settings = &self.current()["settings"];
         let raw = settings["sleepWire"].as_u64()?;
@@ -212,6 +222,23 @@ fn validate_profile(profile: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editing_one_dpi_color_preserves_other_stages_and_rejects_invalid_input() {
+        let mut profiles = Profiles::new();
+        let original = profiles.current()["dpiStages"].clone();
+        profiles.set_dpi_color(2, "#12abEF").unwrap();
+        assert_eq!(profiles.current()["dpiStages"][2]["color"], "#12ABEF");
+        for i in [0, 1, 3, 4, 5] { assert_eq!(profiles.current()["dpiStages"][i], original[i]); }
+        let edited = profiles.current().clone();
+        assert!(profiles.set_dpi_color(6, "#123456").is_err());
+        assert!(profiles.set_dpi_color(2, "#12345Z").is_err());
+        assert_eq!(profiles.current(), &edited);
+        let exported = profiles.export_current().unwrap();
+        let mut restored = Profiles::new();
+        restored.import(&exported).unwrap();
+        assert_eq!(restored.current()["dpiStages"][2]["color"], "#12ABEF");
+    }
 
     #[test]
     fn legacy_export_round_trips_and_keeps_extra_fields() {
