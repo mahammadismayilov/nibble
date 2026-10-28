@@ -17,6 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust dependencies and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/gpui-prototype/target
+          key: ${{ runner.os }}-gpui-${{ hashFiles('desktop/gpui-prototype/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-gpui-${{ hashFiles('desktop/gpui-prototype/Cargo.lock') }}-
       - name: Build prototype
         run: cargo build --release --locked
       - uses: actions/upload-artifact@v4
