@@ -23,6 +23,7 @@ pub struct Lighting {
     pub mode: LightMode,
     pub brightness: u8,
     pub speed: u8,
+    pub color: Option<[u8; 3]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -218,6 +219,58 @@ fn sensor_packet(sensor: &Sensor) -> [u8; 33] {
     packet
 }
 
+#[derive(Clone, Copy)]
+pub enum LightChange { Mode(LightMode), Brightness(u8), Speed(u8) }
+
+pub fn set_lighting(snapshot: &Readout, change: LightChange) -> Result<Lighting, String> {
+    let (_api, mouse) = open_original_mouse(snapshot)?;
+    let mut light = query(&mouse, 0x15).and_then(|reply| parse_light(&reply))
+        .ok_or("Could not read lighting settings. No settings were sent.")?;
+    if light.color.is_none() {
+        light.color = snapshot.lighting.as_ref().and_then(|previous| previous.color);
+    }
+    match change {
+        LightChange::Mode(mode) => light.mode = mode,
+        LightChange::Brightness(value) if light.mode != LightMode::Off && value <= 100 && value % 25 == 0 => light.brightness = value,
+        LightChange::Speed(value) if light.mode == LightMode::Breathing && (1..=10).contains(&value) => light.speed = value,
+        _ => return Err("Unsupported lighting value. No settings were sent.".into()),
+    }
+    let packet = light_packet(&light)?;
+    send_setting(&mouse, &packet)?;
+    let mut readback = query(&mouse, 0x15).and_then(|reply| parse_light(&reply))
+        .ok_or("Lighting change was sent, but the mouse did not confirm it. Refresh before trying again.")?;
+    let expected_speed_wire = ((u16::from(light.speed - 1) * 4 + 4) / 9) as u8;
+    let expected_speed = 1 + (expected_speed_wire * 9 + 2) / 4;
+    if readback.mode != light.mode || (light.mode != LightMode::Off && readback.brightness != light.brightness)
+        || (light.mode == LightMode::Breathing && readback.speed != expected_speed) {
+        return Err("The mouse returned different lighting settings. Refresh before trying again.".into());
+    }
+    if readback.color.is_none() { readback.color = light.color; }
+    Ok(readback)
+}
+
+fn light_packet(light: &Lighting) -> Result<[u8; 33], String> {
+    let mut packet = [0u8; 33];
+    packet[1] = 5; packet[3] = 1;
+    if light.mode == LightMode::Off { packet[4] = 2; return Ok(packet); }
+    let color = light.color.ok_or("The current lighting color is unavailable. No settings were sent.")?;
+    if light.brightness > 100 || light.brightness % 25 != 0 || !(1..=10).contains(&light.speed) {
+        return Err("Unsupported lighting values. No settings were sent.".into());
+    }
+    let speed = ((u16::from(light.speed - 1) * 4 + 4) / 9) as u8;
+    packet[6] = ((light.brightness / 25) << 4) | speed;
+    match light.mode {
+        LightMode::Constant => { packet[4] = 5; packet[5] = 3; packet[7..10].copy_from_slice(&color); }
+        LightMode::Breathing => {
+            packet[4] = 0x18; packet[5] = 2; packet[7] = 7;
+            for i in 0..7 { packet[8 + i * 3..11 + i * 3].copy_from_slice(&color); }
+        }
+        LightMode::Off => unreachable!(),
+    }
+    packet[32] = packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    Ok(packet)
+}
+
 fn send_setting(mouse: &HidDevice, packet: &[u8; 33]) -> Result<(), String> {
     match mouse.write(packet) {
         Ok(33) => std::thread::sleep(Duration::from_millis(90)),
@@ -339,7 +392,13 @@ fn parse_light(buf: &[u8]) -> Option<Lighting> {
     let brightness = buf[6] >> 4;
     let speed = buf[6] & 0x0f;
     if brightness > 4 || speed > 4 { return None; }
-    Some(Lighting { mode, brightness: brightness * 25, speed: 1 + (speed * 9 + 2) / 4 })
+    let color = match mode {
+        LightMode::Off => None,
+        LightMode::Constant if buf.len() >= 10 => Some([buf[7], buf[8], buf[9]]),
+        LightMode::Breathing if buf.len() >= 11 => Some([buf[8], buf[9], buf[10]]),
+        _ => None,
+    };
+    Some(Lighting { mode, brightness: brightness * 25, speed: 1 + (speed * 9 + 2) / 4, color })
 }
 
 fn parse_battery(buf: &[u8], result: &mut Readout) {
@@ -475,12 +534,22 @@ mod tests {
         reply[4] = 0x18;
         reply[5] = 2;
         reply[6] = 0x42;
-        assert_eq!(parse_light(&reply), Some(Lighting { mode: LightMode::Breathing, brightness: 100, speed: 6 }));
+        assert_eq!(parse_light(&reply), Some(Lighting { mode: LightMode::Breathing, brightness: 100, speed: 6, color: Some([0, 0, 0]) }));
         assert!(matches_reply(0x15, &reply));
         reply[6] = 0x52;
         assert_eq!(parse_light(&reply), None);
         reply[4] = 0;
         assert!(!matches_reply(0x15, &reply));
+    }
+
+    #[test]
+    fn lighting_packets_keep_the_reported_color() {
+        let light = Lighting { mode: LightMode::Breathing, brightness: 100, speed: 6, color: Some([1, 2, 3]) };
+        let packet = light_packet(&light).unwrap();
+        assert_eq!(&packet[..11], &[0, 5, 0, 1, 0x18, 2, 0x42, 7, 1, 2, 3]);
+        assert_eq!(&packet[26..29], &[1, 2, 3]);
+        assert_eq!(packet[32], packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)));
+        assert!(light_packet(&Lighting { color: None, ..light }).is_err());
     }
 
     #[test]

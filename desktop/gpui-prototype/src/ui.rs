@@ -1,4 +1,4 @@
-use crate::device::{self, LightMode, Lighting, Readout, Sensor, SensorChange};
+use crate::device::{self, LightChange, LightMode, Lighting, Readout, Sensor, SensorChange};
 use gpui::{
     Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, Render, StyledImage,
     Window, div, img, prelude::*, px, relative, rgb,
@@ -59,7 +59,7 @@ impl Nibble {
             active_dpi: Some(5),
             dpi_count: Some(6),
             rate: Some(1000),
-            lighting: Some(Lighting { mode: LightMode::Breathing, brightness: 0, speed: 6 }),
+            lighting: Some(Lighting { mode: LightMode::Breathing, brightness: 0, speed: 6, color: Some([128, 0, 128]) }),
             sensor: Some(Sensor { lod: 1, angle_snap: false, ripple: false }),
             keys: Some([[0x10, 1, 0], [0x10, 2, 0], [0x10, 4, 0], [0x10, 8, 0], [0x10, 16, 0], [0x40, 1, 0]]),
             vid: 0x249a,
@@ -358,6 +358,40 @@ impl Nibble {
         cx.notify();
     }
 
+    fn update_lighting(&mut self, change: LightChange, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        if self.demo {
+            if let Some(light) = self.readout.as_mut().and_then(|data| data.lighting.as_mut()) {
+                match change { LightChange::Mode(mode) => light.mode = mode, LightChange::Brightness(value) => light.brightness = value, LightChange::Speed(value) => light.speed = value }
+            }
+            cx.notify();
+            return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Applying lighting…".into());
+        let work = cx.background_executor().spawn(async move { device::set_lighting(&snapshot, change) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok(light) => {
+                        if let Some(data) = &mut view.readout { data.lighting = Some(light); }
+                        view.message = Some("Lighting settings confirmed by receiver.".into());
+                    }
+                    Err(error) => {
+                        if let Some(data) = &mut view.readout { data.lighting = None; }
+                        view.message = Some(error);
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
+    }
+
     fn header(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let status = if self.demo {
             "Sample data · No receiver access".to_string()
@@ -558,15 +592,15 @@ impl Nibble {
             ("LIGHTING / MACRO", &["Lighting on/off", "Macro"]),
         ];
         let mut functions = div().id("key-functions").flex_1().min_h(px(0.0)).overflow_y_scroll().flex().flex_col().gap(px(14.0));
-        for (title, items) in groups {
+        for (group_index, (title, items)) in groups.into_iter().enumerate() {
             let mut group = div().flex().flex_col().gap(px(6.0)).child(muted(p, title));
-            for pair in items.chunks(2) {
+            for (row_index, pair) in items.chunks(2).enumerate() {
                 let mut row = div().flex().gap(px(6.0));
-                for label in pair {
+                for (item_index, label) in pair.iter().enumerate() {
                     let label = *label;
                     let enabled = (self.demo || self.experimental_write) && keys.is_some() && self.selected_key != 0 && device::key_wire(label).is_some();
                     let selected = keys.and_then(|keys| device::key_wire(label).map(|wire| keys[self.selected_key] == wire)).unwrap_or(false);
-                    let mut button = div().id(("key-function", label)).flex_1().rounded(px(8.0)).px(px(12.0)).py(px(11.0))
+                    let mut button = div().id(("key-function", group_index * 100 + row_index * 2 + item_index)).flex_1().rounded(px(8.0)).px(px(12.0)).py(px(11.0))
                         .bg(rgb(if selected { p.accent_soft } else { p.inset }))
                         .text_color(rgb(if selected { p.accent } else if enabled { p.text } else { p.muted })).child(label);
                     if enabled { button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.assign_key(label, cx))); }
@@ -584,29 +618,52 @@ impl Nibble {
         div().flex().gap(px(16.0)).child(left).child(right)
     }
 
-    fn lighting(&self, p: Palette) -> Div {
+    fn lighting(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let image = div().w(px(410.0)).h(px(560.0)).flex().flex_col().items_center().justify_center()
             .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
             .child(div().mt(px(18.0)).child(muted(p, "Live preview of the selected effect")));
         let mut effects = div().flex().flex_col().gap(px(8.0));
         let lighting = self.readout.as_ref().and_then(|d| d.lighting.as_ref());
-        for row in [["Flowing light", "Breathing", "Constant light"], ["Neon", "Colorful waves", "Close"]] {
+        let light_editable = (self.demo || self.experimental_write) && lighting.is_some();
+        for (row_index, row) in [["Flowing light", "Breathing", "Constant light"], ["Neon", "Colorful waves", "Close"]].into_iter().enumerate() {
             let mut line = div().flex().gap(px(8.0));
-            for item in row {
+            for (item_index, item) in row.into_iter().enumerate() {
                 let selected = lighting.is_some_and(|light| matches!((item, light.mode), ("Breathing", LightMode::Breathing) | ("Constant light", LightMode::Constant) | ("Close", LightMode::Off)));
-                line = line.child(div().flex_1().rounded(px(10.0)).bg(rgb(if selected { p.accent_soft } else { p.inset }))
-                    .text_color(rgb(if selected { p.accent } else { p.text })).px(px(12.0)).py(px(16.0)).text_center().child(item));
+                let mode = match item { "Breathing" => Some(LightMode::Breathing), "Constant light" => Some(LightMode::Constant), "Close" => Some(LightMode::Off), _ => None };
+                let mut button = div().id(("light-mode", row_index * 3 + item_index)).flex_1().rounded(px(10.0)).bg(rgb(if selected { p.accent_soft } else { p.inset }))
+                    .text_color(rgb(if selected { p.accent } else if mode.is_some() { p.text } else { p.muted })).px(px(12.0)).py(px(16.0)).text_center().child(item);
+                if let Some(mode) = mode.filter(|_| (self.demo || self.experimental_write) && lighting.is_some()) {
+                    button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_lighting(LightChange::Mode(mode), cx)));
+                }
+                line = line.child(button);
             }
             effects = effects.child(line);
+        }
+        let mut brightness = div().flex().items_center().gap(px(8.0)).child(div().w(px(100.0)).text_color(rgb(p.muted)).child("Brightness"));
+        for value in [0u8, 25, 50, 75, 100] {
+            let active = lighting.is_some_and(|light| light.brightness == value);
+            let mut button = div().id(("light-brightness", usize::from(value))).rounded(px(8.0)).px(px(10.0)).py(px(8.0))
+                .bg(rgb(if active { p.accent_soft } else { p.inset })).text_color(rgb(if active { p.accent } else { p.text })).child(format!("{value}%"));
+            if light_editable && lighting.is_some_and(|light| light.mode != LightMode::Off) { button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_lighting(LightChange::Brightness(value), cx))); }
+            brightness = brightness.child(button);
+        }
+        let current_speed = lighting.map(|light| light.speed);
+        let mut speed = div().flex().items_center().gap(px(8.0)).child(div().w(px(100.0)).text_color(rgb(p.muted)).child("Speed"));
+        for value in 1u8..=10 {
+            let active = current_speed == Some(value);
+            let mut button = div().id(("light-speed", usize::from(value))).rounded(px(6.0)).px(px(8.0)).py(px(8.0))
+                .bg(rgb(if active { p.accent_soft } else { p.inset })).text_color(rgb(if active { p.accent } else { p.text })).child(value.to_string());
+            if light_editable && lighting.is_some_and(|light| light.mode == LightMode::Breathing) { button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_lighting(LightChange::Speed(value), cx))); }
+            speed = speed.child(button);
         }
         let card = card(p).flex_1().flex().flex_col().gap(px(14.0))
             .child(div().flex().justify_between().child(div().child(heading("Lighting Effect"))
                 .child(muted(p, "Constant mode color = active DPI stage color (change colors on the DPI tab)")))
                 .child(muted(p, "Reset lighting")))
             .child(effects)
-            .child(muted(p, "Lighting controls are not available in the preview."))
-            .child(slider_preview(p, "Brightness", lighting.map(|light| format!("{}%", light.brightness))))
-            .child(slider_preview(p, "Speed", lighting.map(|light| light.speed.to_string())))
+            .child(muted(p, if self.demo || self.experimental_write { "Select an effect. Live changes require a readable current color." } else { "Lighting controls are not available in the preview." }))
+            .child(brightness)
+            .child(speed)
             .child(field(p, "Color", "", "—"));
         div().flex().gap(px(16.0)).items_start().child(image).child(card)
     }
@@ -691,7 +748,7 @@ impl Render for Nibble {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = Palette::new(self.dark);
         let page = match self.screen {
-            0 => self.home(p), 1 => self.keys(p, cx), 2 => self.dpi(p, cx), 3 => self.lighting(p),
+            0 => self.home(p), 1 => self.keys(p, cx), 2 => self.dpi(p, cx), 3 => self.lighting(p, cx),
             4 => div().h(px(440.0)).flex().justify_center().items_center().text_color(rgb(p.muted)).child("Macros are not available in this version."),
             5 => self.settings(p, cx), _ => self.about(p),
         };
@@ -766,10 +823,4 @@ fn dpi_position(value: u16) -> f32 {
     ((f32::from(value).clamp(100.0, 26000.0).ln() - minimum) / (26000.0f32.ln() - minimum)).clamp(0.03, 0.97)
 }
 
-fn slider_preview(p: Palette, label: &'static str, value: Option<String>) -> Div {
-    div().flex().items_center().gap(px(14.0)).h(px(34.0)).text_size(px(14.0)).text_color(rgb(p.muted))
-        .child(div().w(px(100.0)).child(label))
-        .child(div().flex_1().h(px(4.0)).rounded_full().bg(rgb(p.hover)))
-        .child(div().w(px(36.0)).child(value.unwrap_or_else(|| "—".into())))
-}
 
