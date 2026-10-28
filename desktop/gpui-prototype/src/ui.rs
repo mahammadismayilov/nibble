@@ -1,4 +1,4 @@
-use crate::device::{self, Readout};
+use crate::device::{self, LightMode, Lighting, Readout};
 use gpui::{
     Context, Div, FontWeight, Image, ImageFormat, IntoElement, ObjectFit, Render, StyledImage,
     Window, div, img, prelude::*, px, relative, rgb,
@@ -54,6 +54,7 @@ impl Nibble {
             active_dpi: Some(5),
             dpi_count: Some(6),
             rate: Some(1000),
+            lighting: Some(Lighting { mode: LightMode::Breathing, brightness: 0, speed: 2 }),
             vid: 0x249a,
             pid: 0x5c2f,
             ..Default::default()
@@ -238,13 +239,16 @@ impl Nibble {
         let rate = data.and_then(|d| d.rate).map(|value| value.to_string()).unwrap_or_else(|| "—".into());
         let battery = data.and_then(|d| d.battery).map(|value| format!("{value}%")).unwrap_or_else(|| "—".into());
         let battery_sub = match data { Some(d) if d.sleeping => "Sleeping", Some(d) if d.charging => "Charging", Some(d) if d.battery.is_some() => "Last read", _ => "Unavailable" };
+        let lighting = data.and_then(|d| d.lighting.as_ref());
+        let light_name = lighting.map(|light| match light.mode { LightMode::Off => "Close", LightMode::Breathing => "Breathing", LightMode::Constant => "Constant light" }).unwrap_or("—");
+        let light_detail = lighting.map(|light| if light.mode == LightMode::Off { "Off".into() } else { format!("{}% brightness", light.brightness) }).unwrap_or_else(|| "Unavailable".into());
         let hero = div().flex_1().h(px(560.0)).flex().flex_col().items_center().justify_center()
             .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
             .child(div().mt(px(18.0)).text_size(px(24.0)).font_weight(FontWeight::SEMIBOLD).child("AJAZZ AJ179 / AJ179P"))
             .child(div().mt(px(6.0)).text_size(px(14.0)).text_color(rgb(p.muted)).child("PAW3395 sensor"));
         let stats = div().flex_1().h(px(560.0)).flex().flex_col()
             .child(div().flex().h(px(185.0)).child(stat(p, "DPI", dpi, stage, true)).child(stat(p, "POLLING RATE", rate, "Hz".into(), true)))
-            .child(div().h(px(185.0)).child(stat(p, "LIGHTING", "—".into(), "Not read in preview".into(), false)))
+            .child(div().h(px(185.0)).child(stat(p, "LIGHTING", light_name.into(), light_detail, false)))
             .child(div().flex().h(px(185.0)).child(stat(p, "CONNECTION", "USB".into(), if data.is_some() { "Receiver found".into() } else { "Not connected".into() }, false))
                 .child(stat(p, "BATTERY", battery, battery_sub.into(), false)));
         div().flex().w_full().gap(px(12.0)).child(hero).child(stats)
@@ -394,9 +398,14 @@ impl Nibble {
             .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
             .child(div().mt(px(18.0)).child(muted(p, "Live preview of the selected effect")));
         let mut effects = div().flex().flex_col().gap(px(8.0));
+        let lighting = self.readout.as_ref().and_then(|d| d.lighting.as_ref());
         for row in [["Flowing light", "Breathing", "Constant light"], ["Neon", "Colorful waves", "Close"]] {
             let mut line = div().flex().gap(px(8.0));
-            for item in row { line = line.child(static_button(p, item)); }
+            for item in row {
+                let selected = lighting.is_some_and(|light| matches!((item, light.mode), ("Breathing", LightMode::Breathing) | ("Constant light", LightMode::Constant) | ("Close", LightMode::Off)));
+                line = line.child(div().flex_1().rounded(px(10.0)).bg(rgb(if selected { p.accent_soft } else { p.inset }))
+                    .text_color(rgb(if selected { p.accent } else { p.text })).px(px(12.0)).py(px(16.0)).text_center().child(item));
+            }
             effects = effects.child(line);
         }
         let card = card(p).flex_1().flex().flex_col().gap(px(14.0))
@@ -404,9 +413,9 @@ impl Nibble {
                 .child(muted(p, "Constant mode color = active DPI stage color (change colors on the DPI tab)")))
                 .child(muted(p, "Reset lighting")))
             .child(effects)
-            .child(muted(p, "Lighting settings are not available in the preview."))
-            .child(slider_preview(p, "Brightness"))
-            .child(slider_preview(p, "Speed"))
+            .child(muted(p, "Lighting controls are not available in the preview."))
+            .child(slider_preview(p, "Brightness", lighting.map(|light| format!("{}%", light.brightness))))
+            .child(slider_preview(p, "Speed", lighting.map(|light| light.speed.to_string())))
             .child(field(p, "Color", "", "—"));
         div().flex().gap(px(16.0)).items_start().child(image).child(card)
     }
@@ -538,10 +547,9 @@ fn dpi_position(value: u16) -> f32 {
     ((f32::from(value).clamp(100.0, 26000.0).ln() - minimum) / (26000.0f32.ln() - minimum)).clamp(0.03, 0.97)
 }
 
-fn slider_preview(p: Palette, label: &'static str) -> Div {
+fn slider_preview(p: Palette, label: &'static str, value: Option<String>) -> Div {
     div().flex().items_center().gap(px(14.0)).h(px(34.0)).text_size(px(14.0)).text_color(rgb(p.muted))
         .child(div().w(px(100.0)).child(label))
         .child(div().flex_1().h(px(4.0)).rounded_full().bg(rgb(p.hover)))
-        .child(div().w(px(36.0)).child("—"))
+        .child(div().w(px(36.0)).child(value.unwrap_or_else(|| "—".into())))
 }
-

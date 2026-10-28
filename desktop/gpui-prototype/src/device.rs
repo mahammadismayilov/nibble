@@ -10,10 +10,21 @@ pub struct Readout {
     pub active_dpi: Option<usize>,
     pub dpi_count: Option<usize>,
     pub rate: Option<u16>,
+    pub lighting: Option<Lighting>,
     pub vid: u16,
     pub pid: u16,
     pub path: Vec<u8>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lighting {
+    pub mode: LightMode,
+    pub brightness: u8,
+    pub speed: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LightMode { Off, Breathing, Constant }
 
 // Only GET requests are sent. The handle is closed when the scan finishes.
 pub fn read_mouse() -> Result<Readout, String> {
@@ -39,6 +50,9 @@ pub fn read_mouse() -> Result<Readout, String> {
             result.dpi_count = Some(count);
             result.dpi = stages;
         }
+    }
+    if let Some(reply) = query(&mouse, 0x15) {
+        result.lighting = parse_light(&reply);
     }
     Ok(result)
 }
@@ -183,8 +197,23 @@ fn matches_reply(command: u8, reply: &[u8; 33]) -> bool {
         0x10 => response == 0x10 || response == 0xc0,
         0x12 => parse_rate(reply).is_some(),
         0x13 => parse_dpi(reply).is_some(),
+        0x15 => parse_light(reply).is_some(),
         _ => false,
     }
+}
+
+fn parse_light(buf: &[u8]) -> Option<Lighting> {
+    if buf.len() < 7 { return None; }
+    let mode = match (buf[4], buf[5] & 0x0f) {
+        (0x02, 0) => LightMode::Off,
+        (0x18, 2) => LightMode::Breathing,
+        (0x05, 3) => LightMode::Constant,
+        _ => return None,
+    };
+    let brightness = buf[6] >> 4;
+    let speed = buf[6] & 0x0f;
+    if brightness > 4 || speed > 4 { return None; }
+    Some(Lighting { mode, brightness: brightness * 25, speed })
 }
 
 fn parse_battery(buf: &[u8], result: &mut Readout) {
@@ -302,5 +331,19 @@ mod tests {
         assert_eq!(rate[32], 2);
         assert!(rate_packet(8000).is_err());
     }
-}
 
+    #[test]
+    fn decodes_known_lighting_replies_without_assuming_unknown_states() {
+        let mut reply = [0u8; 33];
+        reply[1] = 0x15;
+        reply[4] = 0x18;
+        reply[5] = 2;
+        reply[6] = 0x42;
+        assert_eq!(parse_light(&reply), Some(Lighting { mode: LightMode::Breathing, brightness: 100, speed: 2 }));
+        assert!(matches_reply(0x15, &reply));
+        reply[6] = 0x52;
+        assert_eq!(parse_light(&reply), None);
+        reply[4] = 0;
+        assert!(!matches_reply(0x15, &reply));
+    }
+}
