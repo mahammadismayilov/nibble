@@ -1,9 +1,10 @@
 use crate::device::{self, LightChange, LightMode, Lighting, PowerSettings, Readout, Sensor, SensorChange};
 use crate::profile::{self, Profiles};
 use gpui::{
-    Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, ObjectFit, PathPromptOptions, Render, ScrollHandle, StyledImage,
-    Window, div, img, point, prelude::*, px, relative, rgb,
+    Bounds, Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, MouseButton, ObjectFit, PathPromptOptions, Pixels, Point, Render, ScrollHandle, StyledImage,
+    Window, canvas, div, img, point, prelude::*, px, relative, rgb,
 };
+use std::{cell::Cell, rc::Rc};
 use std::sync::Arc;
 use std::path::PathBuf;
 
@@ -45,6 +46,8 @@ pub struct Nibble {
     dpi_focus: FocusHandle,
     dpi_input: Option<String>,
     dpi_replace_input: bool,
+    dpi_track_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    dpi_drag: Option<(usize, u16)>,
     color_focus: FocusHandle,
     color_input: Option<String>,
     color_stage: Option<usize>,
@@ -99,6 +102,8 @@ impl Nibble {
             dpi_focus: cx.focus_handle(),
             dpi_input: None,
             dpi_replace_input: false,
+            dpi_track_bounds: Rc::new(Cell::new(None)),
+            dpi_drag: None,
             color_focus: cx.focus_handle(),
             color_input: None,
             color_stage: None,
@@ -176,6 +181,7 @@ impl Nibble {
 
     fn select_profile(&mut self, index: usize, cx: &mut Context<Self>) {
         if self.scanning || self.applying { self.message = Some("Wait until the current device operation finishes.".into()); cx.notify(); return; }
+        self.dpi_drag = None;
         self.color_input = None;
         self.color_stage = None;
         let previous = self.profiles.clone();
@@ -256,6 +262,7 @@ impl Nibble {
 
     fn select_dpi(&mut self, index: usize, cx: &mut Context<Self>) {
         self.dpi_input = None;
+        self.dpi_drag = None;
         self.color_input = None;
         self.color_stage = None;
         self.update_dpi(index, false, cx);
@@ -263,6 +270,7 @@ impl Nibble {
 
     fn select_dpi_count(&mut self, count: usize, cx: &mut Context<Self>) {
         self.dpi_input = None;
+        self.dpi_drag = None;
         self.color_input = None;
         self.color_stage = None;
         self.update_dpi(count, true, cx);
@@ -270,6 +278,7 @@ impl Nibble {
 
     fn edit_dpi(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
+        self.dpi_drag = None;
         let Some(value) = self.readout.as_ref().and_then(|data| data.active_dpi.and_then(|i| data.dpi.get(i))) else { return; };
         self.dpi_input = Some(value.to_string());
         self.dpi_replace_input = true;
@@ -277,8 +286,43 @@ impl Nibble {
         cx.notify();
     }
 
+    fn dpi_for_pointer(&self, position: Point<Pixels>) -> Option<u16> {
+        let bounds = self.dpi_track_bounds.get()?;
+        let width: f32 = bounds.size.width.into();
+        if width <= 0.0 { return None; }
+        let offset: f32 = (position.x - bounds.origin.x).into();
+        let step = if self.profiles.current()["settings"]["fineDpi"].as_bool() == Some(true) { 50 } else { 100 };
+        Some(dpi_from_position(offset / width, step))
+    }
+
+    fn start_dpi_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        let Some(stage) = self.readout.as_ref().and_then(|data| data.active_dpi) else { return; };
+        if let Some(value) = self.dpi_for_pointer(position) {
+            self.dpi_input = None;
+            self.dpi_drag = Some((stage, value));
+            cx.notify();
+        }
+    }
+
+    fn move_dpi_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some((stage, _)) = self.dpi_drag else { return; };
+        if let Some(value) = self.dpi_for_pointer(position) { self.dpi_drag = Some((stage, value)); cx.notify(); }
+    }
+
+    fn finish_dpi_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some((stage, pending)) = self.dpi_drag.take() else { return; };
+        let value = self.dpi_for_pointer(position).unwrap_or(pending);
+        let current = self.readout.as_ref().and_then(|data| data.active_dpi.map(|active| (active, data.dpi.get(active).copied())));
+        if current.is_some_and(|(active, existing)| active == stage && existing != Some(value)) {
+            self.set_dpi_value(value, cx);
+        }
+        cx.notify();
+    }
+
     fn edit_color(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.scanning || self.applying || !self.profiles_writable { return; }
+        self.dpi_drag = None;
         let Some(stage) = self.readout.as_ref().and_then(|data| data.active_dpi) else { return; };
         let Some(color) = self.profiles.current()["dpiStages"][stage]["color"].as_str() else { return; };
         self.color_input = Some(color.to_string());
@@ -706,7 +750,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; cx.notify();
                     })),
             );
         }
@@ -768,7 +812,8 @@ impl Nibble {
             let mut row = div().flex().gap(px(8.0));
             for i in pair.into_iter().flatten() {
                 if i >= stage_count { continue; }
-                let value = data.and_then(|d| d.dpi.get(i)).map(u16::to_string).unwrap_or_else(|| "—".into());
+                let value = self.dpi_drag.filter(|(stage, _)| *stage == i).map(|(_, value)| value)
+                    .or_else(|| data.and_then(|d| d.dpi.get(i).copied())).map(|value| value.to_string()).unwrap_or_else(|| "—".into());
                 let active = data.and_then(|d| d.active_dpi) == Some(i);
                 let mut stage = div().id(("dpi-stage", i)).rounded(px(8.0)).bg(rgb(if active { p.accent_soft } else { p.inset })).px(px(10.0)).py(px(6.0)).flex().items_center().gap(px(8.0))
                     .child(div().w(px(28.0)).h(px(28.0)).rounded(px(6.0)).bg(rgb(profile_colors.get(i).copied().unwrap_or(p.muted))))
@@ -784,11 +829,27 @@ impl Nibble {
             }
             stage_rows = stage_rows.child(row);
         }
-        let mut track = div().relative().w_full().h(px(66.0))
+        let bounds = self.dpi_track_bounds.clone();
+        let mut track = div().id("dpi-track").relative().w_full().h(px(66.0))
+            .child(canvas(move |rect, _, _| { bounds.set(Some(rect)); }, |_, _, _, _| {}).absolute().size_full())
             .child(div().absolute().top(px(41.0)).w_full().h(px(2.0)).bg(rgb(p.muted)));
+        if dpi_editable {
+            track = track.cursor_pointer()
+                .on_mouse_down(MouseButton::Left, cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    if let Some(bounds) = this.dpi_track_bounds.get() {
+                        if event.position.y >= bounds.origin.y + px(30.0) { this.start_dpi_drag(event.position, cx); }
+                    }
+                }))
+                .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                    if event.pressed_button == Some(MouseButton::Left) { this.move_dpi_drag(event.position, cx); }
+                }))
+                .on_mouse_up(MouseButton::Left, cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| this.finish_dpi_drag(event.position, cx)))
+                .on_mouse_up_out(MouseButton::Left, cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| this.finish_dpi_drag(event.position, cx)));
+        }
         if let Some(data) = data {
             for (i, value) in data.dpi.iter().enumerate().take(stage_count) {
-                let position = dpi_position(*value);
+                let value = self.dpi_drag.filter(|(stage, _)| *stage == i).map(|(_, value)| value).unwrap_or(*value);
+                let position = dpi_position(value);
                 let active = data.active_dpi == Some(i);
                 let color = profile_colors.get(i).copied().unwrap_or(p.accent);
                 let mut number = div().id(("dpi-number", i)).absolute().left(relative(position)).top(px(0.0)).ml(px(-20.0))
@@ -798,7 +859,8 @@ impl Nibble {
                     .rounded_full().bg(rgb(if active { color } else { p.text }));
                 if dpi_editable {
                     number = number.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_dpi(i, cx)));
-                    dot = dot.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_dpi(i, cx)));
+                    dot = dot.cursor_pointer().on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()))
+                        .on_click(cx.listener(move |this, _, _, cx| this.select_dpi(i, cx)));
                 }
                 track = track.child(number).child(dot);
             }
@@ -821,7 +883,7 @@ impl Nibble {
             level_buttons = level_buttons.child(button);
         }
         let levels = div().flex().items_center().gap(px(8.0)).text_size(px(12.0)).text_color(rgb(p.muted)).child("DPI Levels:").child(level_buttons);
-        let selected_value = self.dpi_input.clone().or_else(|| data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i)))
+        let selected_value = self.dpi_input.clone().or_else(|| self.dpi_drag.map(|(_, value)| value.to_string())).or_else(|| data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i)))
             .map(u16::to_string)).unwrap_or_else(|| "—".into());
         let selected_color = data.and_then(|d| d.active_dpi)
             .and_then(|i| profile_colors.get(i)).copied().unwrap_or(p.muted);
@@ -1124,7 +1186,8 @@ impl Render for Nibble {
             4 => div().h(px(440.0)).flex().justify_center().items_center().text_color(rgb(p.muted)).child("Macros are not available in this version."),
             5 => self.settings(p, cx), _ => self.about(p),
         };
-        let notice = if self.color_input.is_some() { "Enter a profile color as #RRGGBB, then press Enter to save or Escape to cancel. This does not change the mouse.".to_string() }
+        let notice = if self.dpi_drag.is_some() { "Release to apply the DPI value.".to_string() }
+            else if self.color_input.is_some() { "Enter a profile color as #RRGGBB, then press Enter to save or Escape to cancel. This does not change the mouse.".to_string() }
             else if self.dpi_input.is_some() { "Enter a DPI value, then press Enter to apply or Escape to cancel.".to_string() }
             else if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
             else if self.scanning { "Reading the receiver…".to_string() }
@@ -1194,6 +1257,25 @@ fn info_tile(p: Palette, label: &'static str, value: &'static str) -> Div {
 fn dpi_position(value: u16) -> f32 {
     let minimum = 100.0f32.ln();
     ((f32::from(value).clamp(100.0, 26000.0).ln() - minimum) / (26000.0f32.ln() - minimum)).clamp(0.03, 0.97)
+}
+
+fn dpi_from_position(position: f32, step: u16) -> u16 {
+    let min = 100.0f32.ln();
+    let raw = (min + position.clamp(0.0, 1.0) * (26000.0f32.ln() - min)).exp();
+    ((raw / f32::from(step)).round() * f32::from(step)).clamp(50.0, 26000.0) as u16
+}
+
+#[cfg(test)]
+mod dpi_track_tests {
+    use super::*;
+
+    #[test]
+    fn track_uses_logarithmic_scale_and_respects_step_and_limits() {
+        assert_eq!(dpi_from_position(-1.0, 100), 100);
+        assert_eq!(dpi_from_position(2.0, 100), 26000);
+        assert_eq!(dpi_from_position(dpi_position(2400), 100), 2400);
+        assert_eq!(dpi_from_position(dpi_position(2450), 50), 2450);
+    }
 }
 
 
