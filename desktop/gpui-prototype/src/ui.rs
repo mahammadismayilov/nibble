@@ -48,6 +48,11 @@ pub struct Nibble {
     dpi_replace_input: bool,
     dpi_track_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     dpi_drag: Option<(usize, u16)>,
+    light_brightness_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    light_speed_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    light_drag: Option<(bool, u8)>,
+    light_brightness_focus: FocusHandle,
+    light_speed_focus: FocusHandle,
     color_focus: FocusHandle,
     color_input: Option<String>,
     color_stage: Option<usize>,
@@ -104,6 +109,11 @@ impl Nibble {
             dpi_replace_input: false,
             dpi_track_bounds: Rc::new(Cell::new(None)),
             dpi_drag: None,
+            light_brightness_bounds: Rc::new(Cell::new(None)),
+            light_speed_bounds: Rc::new(Cell::new(None)),
+            light_drag: None,
+            light_brightness_focus: cx.focus_handle(),
+            light_speed_focus: cx.focus_handle(),
             color_focus: cx.focus_handle(),
             color_input: None,
             color_stage: None,
@@ -720,6 +730,83 @@ impl Nibble {
         cx.notify();
     }
 
+    fn light_value_at(&self, speed: bool, position: Point<Pixels>) -> Option<u8> {
+        let bounds = if speed { &self.light_speed_bounds } else { &self.light_brightness_bounds }.get()?;
+        let width: f32 = bounds.size.width.into();
+        if width <= 0.0 { return None; }
+        let offset: f32 = (position.x - bounds.origin.x).into();
+        Some(light_slider_value(offset / width, speed))
+    }
+
+    fn start_light_drag(&mut self, speed: bool, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.scanning || self.applying { return; }
+        if let Some(value) = self.light_value_at(speed, position) { self.light_drag = Some((speed, value)); cx.notify(); }
+    }
+
+    fn move_light_drag(&mut self, speed: bool, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if !self.light_drag.is_some_and(|(active, _)| active == speed) { return; }
+        if let Some(value) = self.light_value_at(speed, position) { self.light_drag = Some((speed, value)); cx.notify(); }
+    }
+
+    fn finish_light_drag(&mut self, speed: bool, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if !self.light_drag.is_some_and(|(active, _)| active == speed) { return; }
+        let Some((active, pending)) = self.light_drag.take() else { return; };
+        if active != speed { cx.notify(); return; }
+        let value = self.light_value_at(speed, position).unwrap_or(pending);
+        let light = self.readout.as_ref().and_then(|data| data.lighting.as_ref());
+        let allowed = light.is_some_and(|light| if speed { light.mode == LightMode::Breathing && light.speed != value }
+            else { light.mode != LightMode::Off && light.brightness != value });
+        if allowed { self.update_lighting(if speed { LightChange::Speed(value) } else { LightChange::Brightness(value) }, cx); }
+        cx.notify();
+    }
+
+    fn light_slider(&self, p: Palette, cx: &mut Context<Self>, speed: bool, current: Option<u8>, enabled: bool) -> Div {
+        let value = self.light_drag.filter(|(active, _)| *active == speed).map(|(_, value)| value).or(current);
+        let fraction = value.map(|value| if speed { f32::from(value.saturating_sub(1)) / 9.0 } else { f32::from(value) / 100.0 }).unwrap_or(0.0);
+        let bounds = if speed { self.light_speed_bounds.clone() } else { self.light_brightness_bounds.clone() };
+        let focus = if speed { &self.light_speed_focus } else { &self.light_brightness_focus };
+        let mut track = div().id(if speed { "light-speed" } else { "light-brightness" }).track_focus(focus).relative().flex_1().h(px(28.0))
+            .child(canvas(move |rect, _, _| { bounds.set(Some(rect)); }, |_, _, _, _| {}).absolute().size_full())
+            .child(div().absolute().top(px(12.0)).w_full().h(px(4.0)).rounded_full().bg(rgb(p.hover)))
+            .child(div().absolute().top(px(12.0)).w(relative(fraction)).h(px(4.0)).rounded_full().bg(rgb(p.accent)))
+            .child(div().absolute().left(relative(fraction)).top(px(7.0)).ml(px(-7.0)).size(px(14.0)).rounded_full()
+                .bg(rgb(if enabled { p.accent } else { p.muted })));
+        if enabled {
+            track = track.cursor_pointer()
+                .on_mouse_down(MouseButton::Left, cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
+                    window.focus(if speed { &this.light_speed_focus } else { &this.light_brightness_focus });
+                    this.start_light_drag(speed, event.position, cx);
+                }))
+                .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _, cx| {
+                    let current = this.readout.as_ref().and_then(|data| data.lighting.as_ref()).map(|light| if speed { light.speed } else { light.brightness });
+                    if let Some(current) = current {
+                        let step: u8 = if speed { 1 } else { 25 };
+                        let min = if speed { 1 } else { 0 };
+                        let max = if speed { 10 } else { 100 };
+                        let next = match event.keystroke.key.as_str() {
+                            "right" | "up" => Some(current.saturating_add(step).min(max)),
+                            "left" | "down" => Some(current.saturating_sub(step).max(min)),
+                            "home" => Some(min), "end" => Some(max), _ => None,
+                        };
+                        if let Some(next) = next {
+                            if next != current { this.update_lighting(if speed { LightChange::Speed(next) } else { LightChange::Brightness(next) }, cx); }
+                            cx.stop_propagation();
+                        }
+                    }
+                }))
+                .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                    if event.pressed_button == Some(MouseButton::Left) { this.move_light_drag(speed, event.position, cx); }
+                    else if this.light_drag.take().is_some() { cx.notify(); }
+                }))
+                .on_mouse_up(MouseButton::Left, cx.listener(move |this, event: &gpui::MouseUpEvent, _, cx| this.finish_light_drag(speed, event.position, cx)))
+                .on_mouse_up_out(MouseButton::Left, cx.listener(move |this, event: &gpui::MouseUpEvent, _, cx| this.finish_light_drag(speed, event.position, cx)));
+        }
+        let display = value.map(|value| if speed { value.to_string() } else { format!("{value}%") }).unwrap_or_else(|| "—".into());
+        div().flex().items_center().gap(px(12.0)).text_size(px(12.0)).text_color(rgb(p.muted))
+            .child(div().w(px(100.0)).child(if speed { "Speed" } else { "Brightness" }))
+            .child(track).child(div().w(px(40.0)).text_right().child(display))
+    }
+
     fn header(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let status = if self.demo {
             "Sample data · No receiver access".to_string()
@@ -750,7 +837,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; cx.notify();
                     })),
             );
         }
@@ -1034,32 +1121,19 @@ impl Nibble {
             }
             effects = effects.child(line);
         }
-        let mut brightness = div().flex().items_center().gap(px(8.0)).child(div().w(px(100.0)).text_color(rgb(p.muted)).child("Brightness"));
-        for value in [0u8, 25, 50, 75, 100] {
-            let active = lighting.is_some_and(|light| light.brightness == value);
-            let mut button = div().id(("light-brightness", usize::from(value))).rounded(px(8.0)).px(px(10.0)).py(px(8.0))
-                .bg(rgb(if active { p.accent_soft } else { p.inset })).text_color(rgb(if active { p.accent } else { p.text })).child(format!("{value}%"));
-            if light_editable && lighting.is_some_and(|light| light.mode != LightMode::Off) { button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_lighting(LightChange::Brightness(value), cx))); }
-            brightness = brightness.child(button);
-        }
-        let current_speed = lighting.map(|light| light.speed);
-        let mut speed = div().flex().items_center().gap(px(8.0)).child(div().w(px(100.0)).text_color(rgb(p.muted)).child("Speed"));
-        for value in 1u8..=10 {
-            let active = current_speed == Some(value);
-            let mut button = div().id(("light-speed", usize::from(value))).rounded(px(6.0)).px(px(8.0)).py(px(8.0))
-                .bg(rgb(if active { p.accent_soft } else { p.inset })).text_color(rgb(if active { p.accent } else { p.text })).child(value.to_string());
-            if light_editable && lighting.is_some_and(|light| light.mode == LightMode::Breathing) { button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_lighting(LightChange::Speed(value), cx))); }
-            speed = speed.child(button);
-        }
-        let card = card(p).flex_1().flex().flex_col().gap(px(14.0))
+        let brightness = self.light_slider(p, cx, false, lighting.map(|light| light.brightness),
+            light_editable && lighting.is_some_and(|light| light.mode != LightMode::Off));
+        let speed = self.light_slider(p, cx, true, lighting.map(|light| light.speed),
+            light_editable && lighting.is_some_and(|light| light.mode == LightMode::Breathing));
+        let mut card = card(p).flex_1().flex().flex_col().gap(px(14.0))
             .child(div().flex().justify_between().child(div().child(heading("Lighting Effect"))
                 .child(muted(p, "Constant mode color = active DPI stage color (change colors on the DPI tab)")))
                 .child(muted(p, "Reset lighting")))
             .child(effects)
             .child(muted(p, if self.demo || self.experimental_write { "Select an effect. Live changes require a readable current color." } else { "Lighting controls are not available in the preview." }))
-            .child(brightness)
-            .child(speed)
-            .child(field(p, "Color", "", "—"));
+            .child(brightness);
+        if lighting.is_some_and(|light| light.mode == LightMode::Breathing) { card = card.child(speed); }
+        card = card.child(field(p, "Color", "", "—"));
         div().flex().gap(px(16.0)).items_start().child(image).child(card)
     }
 
@@ -1266,6 +1340,11 @@ fn dpi_from_position(position: f32, step: u16) -> u16 {
     ((raw / f32::from(step)).round() * f32::from(step)).clamp(50.0, 26000.0) as u16
 }
 
+fn light_slider_value(position: f32, speed: bool) -> u8 {
+    let fraction = position.clamp(0.0, 1.0);
+    if speed { 1 + (fraction * 9.0).round() as u8 } else { (fraction * 4.0).round() as u8 * 25 }
+}
+
 #[cfg(test)]
 mod dpi_track_tests {
     use super::*;
@@ -1276,6 +1355,16 @@ mod dpi_track_tests {
         assert_eq!(dpi_from_position(2.0, 100), 26000);
         assert_eq!(dpi_from_position(dpi_position(2400), 100), 2400);
         assert_eq!(dpi_from_position(dpi_position(2450), 50), 2450);
+    }
+
+    #[test]
+    fn lighting_sliders_use_original_ranges_and_brightness_steps() {
+        assert_eq!(light_slider_value(-1.0, false), 0);
+        assert_eq!(light_slider_value(0.5, false), 50);
+        assert_eq!(light_slider_value(2.0, false), 100);
+        assert_eq!(light_slider_value(0.0, true), 1);
+        assert_eq!(light_slider_value(0.5, true), 6);
+        assert_eq!(light_slider_value(1.0, true), 10);
     }
 }
 
