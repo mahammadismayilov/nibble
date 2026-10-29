@@ -784,6 +784,8 @@ impl Nibble {
                         let min = if speed { 1 } else { 0 };
                         let max = if speed { 10 } else { 100 };
                         let next = match event.keystroke.key.as_str() {
+                            "right" | "up" if speed => Some(next_reported_speed(current, true)),
+                            "left" | "down" if speed => Some(next_reported_speed(current, false)),
                             "right" | "up" => Some(current.saturating_add(step).min(max)),
                             "left" | "down" => Some(current.saturating_sub(step).max(min)),
                             "home" => Some(min), "end" => Some(max), _ => None,
@@ -1345,6 +1347,12 @@ fn light_slider_value(position: f32, speed: bool) -> u8 {
     if speed { 1 + (fraction * 9.0).round() as u8 } else { (fraction * 4.0).round() as u8 * 25 }
 }
 
+fn next_reported_speed(current: u8, increasing: bool) -> u8 {
+    let speeds = [1, 3, 6, 8, 10];
+    if increasing { speeds.into_iter().find(|value| *value > current).unwrap_or(10) }
+    else { speeds.into_iter().rev().find(|value| *value < current).unwrap_or(1) }
+}
+
 #[cfg(test)]
 mod dpi_track_tests {
     use super::*;
@@ -1365,6 +1373,9 @@ mod dpi_track_tests {
         assert_eq!(light_slider_value(0.0, true), 1);
         assert_eq!(light_slider_value(0.5, true), 6);
         assert_eq!(light_slider_value(1.0, true), 10);
+        assert_eq!(next_reported_speed(3, true), 6);
+        assert_eq!(next_reported_speed(6, false), 3);
+        assert_eq!(next_reported_speed(10, true), 10);
     }
 }
 
