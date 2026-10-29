@@ -50,6 +50,7 @@ pub struct Nibble {
     color_stage: Option<usize>,
     color_replace_input: bool,
     selected_key: usize,
+    confirm_reset_keys: bool,
     content_scroll: ScrollHandle,
     profiles: Profiles,
     profiles_writable: bool,
@@ -103,6 +104,7 @@ impl Nibble {
             color_stage: None,
             color_replace_input: false,
             selected_key: 0,
+            confirm_reset_keys: false,
             content_scroll: ScrollHandle::new(),
             profiles,
             profiles_writable,
@@ -607,6 +609,39 @@ impl Nibble {
         cx.notify();
     }
 
+    fn reset_keys(&mut self, cx: &mut Context<Self>) {
+        if !self.confirm_reset_keys || self.scanning || self.applying { return; }
+        self.confirm_reset_keys = false;
+        if self.demo {
+            if let Some(data) = &mut self.readout { data.keys = Some(device::default_keymap()); }
+            self.confirm_and_save("Button assignments reset in sample data.");
+            cx.notify(); return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Resetting button assignments…".into());
+        let work = cx.background_executor().spawn(async move { device::reset_keys(&snapshot) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok(keys) => {
+                        if let Some(data) = &mut view.readout { data.keys = Some(keys); }
+                        view.confirm_and_save("Default button assignments confirmed by receiver.");
+                    }
+                    Err(error) => {
+                        if let Some(data) = &mut view.readout { data.keys = None; }
+                        view.message = Some(error);
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
+    }
+
     fn update_lighting(&mut self, change: LightChange, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
         if self.demo {
@@ -671,7 +706,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; this.color_input = None; this.color_stage = None; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; cx.notify();
                     })),
             );
         }
@@ -867,8 +902,20 @@ impl Nibble {
                 .child(format!("{} · {function}", labels[index]))
                 .on_click(cx.listener(move |this, _, _, cx| { this.selected_key = index; cx.notify(); })));
         }
+        let mut reset = div().id("reset-keys").rounded(px(6.0)).px(px(8.0)).py(px(6.0)).text_size(px(12.0))
+            .text_color(rgb(p.muted)).child(if self.confirm_reset_keys { "Confirm reset" } else { "Reset all keys" });
+        if (self.demo || self.experimental_write) && keys.is_some() && !self.scanning && !self.applying {
+            reset = reset.cursor_pointer().text_color(rgb(p.accent)).on_click(cx.listener(|this, _, _, cx| {
+                if this.confirm_reset_keys { this.reset_keys(cx); } else { this.confirm_reset_keys = true; cx.notify(); }
+            }));
+        }
+        let mut reset_actions = div().flex().items_center().child(reset);
+        if self.confirm_reset_keys {
+            reset_actions = reset_actions.child(div().id("cancel-reset-keys").cursor_pointer().px(px(8.0)).text_size(px(12.0)).child("Cancel")
+                .on_click(cx.listener(|this, _, _, cx| { this.confirm_reset_keys = false; cx.notify(); })));
+        }
         let left = div().flex_1().h(px(620.0)).flex().flex_col()
-            .child(div().flex().justify_between().child(div().child(heading("Mouse Buttons")).child(muted(p, "Click a callout to rebind. Grayed options are not available yet."))).child(muted(p, "Reset all keys")))
+            .child(div().flex().justify_between().child(div().child(heading("Mouse Buttons")).child(muted(p, "Click a callout to rebind. Grayed options are not available yet."))).child(reset_actions))
             .child(mouse);
         let groups: [(&str, &[&str]); 4] = [
             ("MOUSE FEATURES", &["Left-Click", "Right-Click", "Middle-Click", "Forward", "Backward", "Double-Click", "Scroll Up", "Scroll Down", "DPI Loop", "Fire button", "Disable Key"]),

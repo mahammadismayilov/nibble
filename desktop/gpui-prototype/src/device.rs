@@ -251,6 +251,23 @@ pub fn set_key(snapshot: &Readout, index: usize, label: &str) -> Result<[[u8; 3]
     Ok(readback)
 }
 
+pub fn default_keymap() -> [[u8; 3]; 6] {
+    [[0x10, 1, 0], [0x10, 2, 0], [0x10, 4, 0], [0x10, 8, 0], [0x10, 16, 0], [0x40, 1, 0]]
+}
+
+pub fn reset_keys(snapshot: &Readout) -> Result<[[u8; 3]; 6], String> {
+    let (_api, mouse) = open_original_mouse(snapshot)?;
+    if query(&mouse, 0x19).and_then(|reply| parse_keymap(&reply)).is_none() {
+        return Err("Could not read the complete keymap. No settings were sent.".into());
+    }
+    let keys = default_keymap();
+    send_setting(&mouse, &keymap_packet(&keys))?;
+    let readback = query(&mouse, 0x19).and_then(|reply| parse_keymap(&reply))
+        .ok_or("Key reset was sent, but the mouse did not confirm it. Refresh before trying again.")?;
+    if readback != keys { return Err("The mouse returned a different keymap. Refresh before trying again.".into()); }
+    Ok(readback)
+}
+
 pub fn key_wire(label: &str) -> Option<[u8; 3]> {
     Some(match label {
         "Left-Click" => [0x10, 1, 0], "Right-Click" => [0x10, 2, 0], "Middle-Click" => [0x10, 4, 0],
@@ -547,6 +564,17 @@ mod tests {
         assert_eq!(model_id(&reply), None);
         assert!(check_model(&reply).is_ok());
         assert_eq!(model_id(&[0x10, 0, 0]), None);
+    }
+
+    #[test]
+    fn default_button_map_matches_original_device_order() {
+        let keys = default_keymap();
+        assert_eq!(keys.map(key_label), ["Left-Click", "Right-Click", "Middle-Click", "Backward", "Forward", "DPI Loop"]);
+        let packet = keymap_packet(&keys);
+        assert_eq!(&packet[..5], &[0, 9, 0, 1, 0x0f]);
+        for (index, key) in keys.iter().enumerate() { assert_eq!(&packet[5 + index * 3..8 + index * 3], key); }
+        assert_eq!(parse_keymap(&packet), Some(keys));
+        assert_eq!(packet[32], packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)));
     }
 
     #[test]
