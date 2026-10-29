@@ -68,6 +68,30 @@ foreach ($tab in $tabs) {
             $bitmap.Save((Join-Path $output "$tab.png"), [System.Drawing.Imaging.ImageFormat]::Png)
             if ($colors.Count -lt 8) { throw "The $tab capture appears blank ($($colors.Count) sampled colors)." }
             Write-Output "$tab capture: ${width}x${height}, $($colors.Count) sampled colors"
+            if ($tab -eq 'dpi-light' -and $width -eq 1040 -and $height -eq 711) {
+                $before = $bitmap.GetPixel(230, 450).ToArgb()
+                if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the GPUI demo for the stage-selection check.' }
+                if (-not [CaptureWindow]::SetCursorPos($rect.Left + 300, $rect.Top + 455)) { throw 'Could not position the pointer for the stage-selection check.' }
+                [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep -Seconds 2
+                $afterBitmap = [System.Drawing.Bitmap]::new($width, $height)
+                $afterGraphics = [System.Drawing.Graphics]::FromImage($afterBitmap)
+                try {
+                    $afterDc = $afterGraphics.GetHdc()
+                    try { $afterPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $afterDc, 2) }
+                    finally { $afterGraphics.ReleaseHdc($afterDc) }
+                    if (-not $afterPrinted) { throw 'Could not capture the GPUI demo after selecting stage 2.' }
+                    $afterBitmap.Save((Join-Path $output 'dpi-light-stage2.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                    if ($afterBitmap.GetPixel(230, 450).ToArgb() -eq $before) { throw 'Selecting stage 2 did not change its highlighted background.' }
+                    Write-Output 'Demo stage-selection check: stage 2 highlight changed.'
+                } finally {
+                    $afterGraphics.Dispose()
+                    $afterBitmap.Dispose()
+                }
+            } elseif ($tab -eq 'dpi-light') {
+                throw "Stage-selection check requires the expected 1040x711 runner window, got ${width}x${height}."
+            }
         } finally {
             $graphics.Dispose()
             $bitmap.Dispose()

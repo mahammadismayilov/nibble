@@ -1184,7 +1184,11 @@ impl Nibble {
             .child(muted(p, if self.demo || self.experimental_write { "Select an effect. Live changes require a readable current color." } else { "Lighting controls are not available in the preview." }))
             .child(brightness);
         if lighting.is_some_and(|light| light.mode == LightMode::Breathing) { card = card.child(speed); }
-        card = card.child(field(p, "Color", "", "—"));
+        let current_color = lighting.and_then(|light| light.color).map(|[r, g, b]| (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b));
+        let swatch = div().w(px(48.0)).h(px(36.0)).rounded(px(7.0)).bg(rgb(p.inset)).p(px(5.0))
+            .child(div().size_full().rounded(px(3.0)).bg(rgb(current_color.unwrap_or(p.muted))));
+        card = card.child(div().flex().items_center().gap(px(12.0)).text_size(px(12.0)).text_color(rgb(p.muted))
+            .child(div().w(px(100.0)).child("Color")).child(swatch));
         div().flex().gap(px(16.0)).items_start().child(image).child(card)
     }
 
@@ -1364,8 +1368,11 @@ fn static_button(p: Palette, label: &'static str) -> Div {
 fn field(p: Palette, title: &'static str, subtitle: &'static str, value: &'static str) -> Div {
     let is_switch = matches!(title, "Angle Snap" | "Ripple Control" | "High-Speed Mode" | "Move wake-up" | "Move to turn off light" | "Left-click lock" | "50-Step DPI Granularity");
     let control = if is_switch {
-        div().w(px(48.0)).h(px(28.0)).rounded_full().bg(rgb(p.hover)).flex().items_center().justify_center()
-            .text_color(rgb(if value == "On" { p.accent } else { p.muted })).child(value)
+        let on = value == "On";
+        let switch = div().w(px(48.0)).h(px(28.0)).rounded_full().bg(rgb(if on { p.accent } else { p.hover }))
+            .flex().items_center().px(px(3.0));
+        (if on { switch.justify_end() } else { switch.justify_start() })
+            .child(div().size(px(22.0)).rounded_full().bg(rgb(p.card)))
     } else {
         div().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0)).text_color(rgb(p.muted)).child(value)
     };
