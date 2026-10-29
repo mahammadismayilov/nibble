@@ -82,6 +82,7 @@ impl Nibble {
             keys: Some([[0x10, 1, 0], [0x10, 2, 0], [0x10, 4, 0], [0x10, 8, 0], [0x10, 16, 0], [0x40, 1, 0]]),
             vid: 0x249a,
             pid: 0x5c2f,
+            model_confirmed: true,
             ..Default::default()
         });
         Self {
@@ -610,7 +611,7 @@ impl Nibble {
         } else if self.scanning {
             "Checking receiver".to_string()
         } else if let Some(data) = &self.readout {
-            format!("AJAZZ AJ179 / AJ179P · {:04X}:{:04X} · Last read", data.vid, data.pid)
+            format!("{} · {:04X}:{:04X} · Last read", if data.model_confirmed { "AJAZZ AJ179 / AJ179P" } else { "Compatible receiver · model unconfirmed" }, data.vid, data.pid)
         } else {
             "Disconnected · Connect mouse receiver to configure".into()
         };

@@ -4,6 +4,9 @@ An isolated interface preview for AJ179 / AJ179P CompX receivers. By default it
 reads battery, DPI, polling rate, and supported lighting, keymap, and sensor states
 without changing settings. It does not replace the desktop app. Close other mouse software before
 testing because concurrent HID reads can interfere.
+Some models share USB identifiers. When a status response identifies a different
+model, the preview refuses to configure it. If the response contains no model
+identity, the header shows that the model is unconfirmed.
 
 Build and run on Windows with a Rust MSVC toolchain and the Windows SDK:
 

@@ -13,6 +13,7 @@ pub struct Readout {
     pub lighting: Option<Lighting>,
     pub sensor: Option<Sensor>,
     pub keys: Option<[[u8; 3]; 6]>,
+    pub model_confirmed: bool,
     pub vid: u16,
     pub pid: u16,
     pub path: Vec<u8>,
@@ -45,6 +46,8 @@ pub fn read_mouse() -> Result<Readout, String> {
     let mut result = Readout { vid: info.vendor_id(), pid: info.product_id(), path: info.path().to_bytes().to_vec(), ..Default::default() };
 
     if let Some(reply) = query(&mouse, 0x10) {
+        check_model(&reply)?;
+        result.model_confirmed = model_id(&reply) == Some(*b"M179");
         parse_battery(&reply, &mut result);
     }
     if let Some(reply) = query(&mouse, 0x12) {
@@ -76,7 +79,21 @@ fn open_original_mouse(snapshot: &Readout) -> Result<(HidApi, HidDevice), String
             && device.path().to_bytes() == snapshot.path.as_slice()
     }).ok_or("Receiver changed or disconnected. Refresh before trying again.")?;
     let mouse = info.open_device(&api).map_err(|error| format!("Could not open the receiver: {error}"))?;
+    if let Some(reply) = query(&mouse, 0x10) { check_model(&reply)?; }
     Ok((api, mouse))
+}
+
+fn model_id(reply: &[u8]) -> Option<[u8; 4]> {
+    let offset = (0..reply.len().min(3)).find(|&index| reply[index] == 0x10)?;
+    let id: [u8; 4] = reply.get(offset + 4..offset + 8)?.try_into().ok()?;
+    if id[0] == b'M' && id[1..].iter().all(u8::is_ascii_alphanumeric) { Some(id) } else { None }
+}
+
+fn check_model(reply: &[u8]) -> Result<(), String> {
+    match model_id(reply) {
+        Some(id) if id != *b"M179" => Err(format!("Receiver reports model {}. This preview only supports AJ179 / AJ179P.", String::from_utf8_lossy(&id))),
+        _ => Ok(()),
+    }
 }
 
 pub fn set_active_dpi(snapshot: &Readout, index: usize) -> Result<(usize, usize, Vec<u16>), String> {
@@ -482,6 +499,21 @@ fn parse_dpi(buf: &[u8]) -> Option<(usize, usize, Vec<u16>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checks_model_identity_without_treating_sleep_reports_as_identity() {
+        let mut reply = [0u8; 33];
+        reply[1] = 0x10;
+        reply[5..9].copy_from_slice(b"M179");
+        assert_eq!(model_id(&reply), Some(*b"M179"));
+        assert!(check_model(&reply).is_ok());
+        reply[5..9].copy_from_slice(b"M620");
+        assert!(check_model(&reply).is_err());
+        reply[1] = 0xc0;
+        assert_eq!(model_id(&reply), None);
+        assert!(check_model(&reply).is_ok());
+        assert_eq!(model_id(&[0x10, 0, 0]), None);
+    }
 
     #[test]
     fn decodes_dpi_table_and_rejects_invalid_active_stage() {
