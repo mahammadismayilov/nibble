@@ -31,6 +31,31 @@ pub struct Lighting {
 pub enum LightMode { Off, Breathing, Constant }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatteryStatus { pub battery: Option<u8>, pub charging: bool, pub sleeping: bool }
+
+pub enum StatusPoll { Status(BatteryStatus), Disconnected, Unavailable, Unsupported(String) }
+
+// A missing reply can mean a sleeping mouse or an interrupted transfer. Only a
+// missing receiver path is treated as a physical disconnect.
+pub fn poll_status(snapshot: &Readout) -> StatusPoll {
+    let Ok(api) = HidApi::new() else { return StatusPoll::Unavailable; };
+    let Some(info) = api.device_list().find(|device| {
+        device.vendor_id() == snapshot.vid && device.product_id() == snapshot.pid
+            && device.path().to_bytes() == snapshot.path.as_slice()
+    }) else { return StatusPoll::Disconnected; };
+    let Ok(mouse) = info.open_device(&api) else { return StatusPoll::Unavailable; };
+    let Some(reply) = query(&mouse, 0x10) else { return StatusPoll::Unavailable; };
+    if let Err(error) = check_model(&reply) { return StatusPoll::Unsupported(error); }
+    StatusPoll::Status(battery_status(&reply))
+}
+
+fn battery_status(reply: &[u8]) -> BatteryStatus {
+    let mut status = Readout::default();
+    parse_battery(reply, &mut status);
+    BatteryStatus { battery: status.battery, charging: status.charging, sleeping: status.sleeping }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sensor { pub lod: u8, pub angle_snap: bool, pub ripple: bool }
 
 // Only GET requests are sent. The handle is closed when the scan finishes.
@@ -551,6 +576,18 @@ fn parse_dpi(buf: &[u8]) -> Option<(usize, usize, Vec<u16>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_poll_distinguishes_sleeping_from_reported_battery() {
+        let mut reply = [0u8; 33];
+        reply[1] = 0xc0;
+        assert_eq!(battery_status(&reply), BatteryStatus { battery: None, charging: false, sleeping: true });
+        reply[2] = 1;
+        reply[3] = 73;
+        assert_eq!(battery_status(&reply), BatteryStatus { battery: Some(73), charging: false, sleeping: false });
+        reply[4] = 1;
+        assert_eq!(battery_status(&reply), BatteryStatus { battery: Some(73), charging: true, sleeping: false });
+    }
 
     #[test]
     fn checks_model_identity_without_treating_sleep_reports_as_identity() {

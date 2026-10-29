@@ -19,6 +19,12 @@ pub fn default_profile() -> Value {
 #[derive(Clone, Debug)]
 pub struct Profiles { document: Value }
 
+#[derive(Clone, Copy)]
+pub enum ReadoutScope {
+    DpiValue(usize), DpiSelection, DpiCount, Rate,
+    Sensor(device::SensorChange), Key(usize), Keys, Lighting(device::LightChange),
+}
+
 impl Profiles {
     pub fn new() -> Self { Self { document: json!({"profileIndex":0,"profiles":[default_profile()]}) } }
 
@@ -92,7 +98,10 @@ impl Profiles {
 
     pub fn power(&self) -> Option<PowerSettings> {
         let settings = &self.current()["settings"];
-        let raw = settings["sleepWire"].as_u64()?;
+        let raw = match settings.get("sleepWire").filter(|value| !value.is_null()) {
+            Some(value) => value.as_u64()?,
+            None => settings.get("sleepMin")?.as_u64()?.checked_mul(6)?,
+        };
         let sleep = if [1, 3, 6, 12, 30, 60, 120, 180].contains(&raw) { raw }
             else if (1..=30).contains(&raw) && [1, 3, 6, 12, 30, 60, 120, 180].contains(&(raw * 6)) { raw * 6 }
             else { return None; };
@@ -110,6 +119,7 @@ impl Profiles {
         let settings = &mut self.document["profiles"][index]["settings"];
         settings["sleepWire"] = json!(power.sleep_wire); settings["moveWake"] = json!(power.move_wake);
         settings["moveCloseLight"] = json!(power.move_close_light); settings["debounce"] = json!(power.debounce);
+        if let Some(settings) = settings.as_object_mut() { settings.remove("sleepMin"); }
         Ok(())
     }
 
@@ -162,6 +172,54 @@ impl Profiles {
             }
         }
         validate_profile(current)
+    }
+
+    pub fn sync_scope(&mut self, data: &Readout, scope: ReadoutScope) -> Result<(), String> {
+        let mut selected = Readout::default();
+        match scope {
+            ReadoutScope::DpiValue(_) | ReadoutScope::DpiSelection | ReadoutScope::DpiCount => { selected.dpi = data.dpi.clone(); selected.active_dpi = data.active_dpi; selected.dpi_count = data.dpi_count; }
+            ReadoutScope::Rate => selected.rate = data.rate,
+            ReadoutScope::Sensor(_) => selected.sensor = data.sensor.clone(),
+            ReadoutScope::Key(_) | ReadoutScope::Keys => selected.keys = data.keys,
+            ReadoutScope::Lighting(_) => selected.lighting = data.lighting.clone(),
+        }
+        let mut observed = self.clone();
+        observed.sync_readout(&selected)?;
+        let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
+        let mut updated = self.document["profiles"][index].clone();
+        let target = &mut updated;
+        let source = observed.current();
+        match scope {
+            ReadoutScope::DpiValue(stage) if stage < 6 => target["dpiStages"][stage]["value"] = source["dpiStages"][stage]["value"].clone(),
+            ReadoutScope::DpiValue(_) => return Err("Invalid DPI stage".into()),
+            ReadoutScope::DpiSelection => {
+                let active = source["activeDpi"].as_u64().ok_or("Active DPI stage is missing")?;
+                let count = target["dpiStageCount"].as_u64().unwrap_or(6).max(active + 1);
+                target["activeDpi"] = json!(active);
+                target["dpiStageCount"] = json!(count);
+            }
+            ReadoutScope::DpiCount => {
+                target["dpiStageCount"] = source["dpiStageCount"].clone();
+                target["activeDpi"] = source["activeDpi"].clone();
+            }
+            ReadoutScope::Rate => target["reportRateIndex"] = source["reportRateIndex"].clone(),
+            ReadoutScope::Sensor(change) => {
+                let key = match change { device::SensorChange::Lod(_) => "lod", device::SensorChange::AngleSnap(_) => "angleSnap", device::SensorChange::Ripple(_) => "ripple" };
+                target["settings"][key] = source["settings"][key].clone();
+            }
+            ReadoutScope::Key(slot) => {
+                let key = ["201", "202", "203", "205", "204", "206"].get(slot).ok_or("Invalid key slot")?;
+                target["keys"][*key] = source["keys"][*key].clone();
+            }
+            ReadoutScope::Keys => target["keys"] = source["keys"].clone(),
+            ReadoutScope::Lighting(change) => {
+                let key = match change { device::LightChange::Mode(_) => "mode", device::LightChange::Brightness(_) => "brightness", device::LightChange::Speed(_) => "speed" };
+                target["light"][key] = source["light"][key].clone();
+            }
+        }
+        validate_profile(target)?;
+        self.document["profiles"][index] = updated;
+        Ok(())
     }
 
     pub fn import(&mut self, input: &str) -> Result<(), String> {
@@ -240,6 +298,73 @@ fn validate_profile(profile: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_sleep_minutes_are_converted_without_confusing_wire_units() {
+        let mut legacy = default_profile();
+        legacy["settings"].as_object_mut().unwrap().remove("sleepWire");
+        legacy["settings"]["sleepMin"] = json!(1);
+        let mut profiles = Profiles::new();
+        profiles.import(&legacy.to_string()).unwrap();
+        assert_eq!(profiles.power().unwrap().sleep_wire, 6);
+        let power = profiles.power().unwrap();
+        profiles.set_power(&power).unwrap();
+        assert_eq!(profiles.current()["settings"]["sleepWire"], 6);
+        assert!(profiles.current()["settings"].get("sleepMin").is_none());
+        profiles.document["profiles"][1]["settings"]["sleepWire"] = json!(1);
+        assert_eq!(profiles.power().unwrap().sleep_wire, 1);
+    }
+
+    #[test]
+    fn updating_one_setting_group_preserves_other_profile_groups() {
+        let mut profiles = Profiles::new();
+        let before = profiles.current().clone();
+        let data = Readout { rate: Some(500), dpi: vec![800; 6], active_dpi: Some(0), dpi_count: Some(6),
+            sensor: Some(device::Sensor { lod: 2, angle_snap: true, ripple: true }), ..Default::default() };
+        profiles.sync_scope(&data, ReadoutScope::Rate).unwrap();
+        assert_eq!(profiles.current()["reportRateIndex"], 2);
+        assert_eq!(profiles.current()["dpiStages"], before["dpiStages"]);
+        assert_eq!(profiles.current()["settings"], before["settings"]);
+    }
+
+    #[test]
+    fn changing_one_control_preserves_other_values_in_its_group() {
+        let mut profiles = Profiles::new();
+        let before = profiles.current().clone();
+        let data = Readout {
+            dpi: vec![1000; 6], active_dpi: Some(1), dpi_count: Some(6),
+            sensor: Some(device::Sensor { lod: 2, angle_snap: true, ripple: true }),
+            keys: Some([[0x10, 1, 0], [0x60, 0, 0], [0x60, 0, 0], [0x60, 0, 0], [0x60, 0, 0], [0x60, 0, 0]]),
+            lighting: Some(device::Lighting { mode: LightMode::Constant, brightness: 25, speed: 3, color: Some([1, 2, 3]) }),
+            ..Default::default()
+        };
+        profiles.sync_scope(&data, ReadoutScope::DpiValue(1)).unwrap();
+        assert_eq!(profiles.current()["dpiStages"][1]["value"], 1000);
+        assert_eq!(profiles.current()["dpiStages"][0], before["dpiStages"][0]);
+        assert_eq!(profiles.current()["dpiStages"][2], before["dpiStages"][2]);
+        profiles.sync_scope(&data, ReadoutScope::Sensor(device::SensorChange::Lod(2))).unwrap();
+        assert_eq!(profiles.current()["settings"]["lod"], "high");
+        assert_eq!(profiles.current()["settings"]["angleSnap"], before["settings"]["angleSnap"]);
+        profiles.sync_scope(&data, ReadoutScope::Key(1)).unwrap();
+        assert_eq!(profiles.current()["keys"]["202"], "disable");
+        assert_eq!(profiles.current()["keys"]["203"], before["keys"]["203"]);
+        profiles.sync_scope(&data, ReadoutScope::Lighting(device::LightChange::Brightness(25))).unwrap();
+        assert_eq!(profiles.current()["light"]["brightness"], 25);
+        assert_eq!(profiles.current()["light"]["mode"], before["light"]["mode"]);
+        assert_eq!(profiles.current()["light"]["color"], before["light"]["color"]);
+    }
+
+    #[test]
+    fn invalid_scoped_updates_leave_the_profile_unchanged() {
+        let mut profiles = Profiles::new();
+        let before = profiles.current().clone();
+        let data = Readout { dpi: vec![1000; 6], active_dpi: Some(1), dpi_count: Some(6),
+            keys: Some([[0x10, 1, 0]; 6]), ..Default::default() };
+        assert!(profiles.sync_scope(&data, ReadoutScope::DpiValue(6)).is_err());
+        assert_eq!(profiles.current(), &before);
+        assert!(profiles.sync_scope(&data, ReadoutScope::Key(6)).is_err());
+        assert_eq!(profiles.current(), &before);
+    }
 
     #[test]
     fn editing_one_dpi_color_preserves_other_stages_and_rejects_invalid_input() {

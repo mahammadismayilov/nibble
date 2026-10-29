@@ -1,5 +1,5 @@
 use crate::device::{self, LightChange, LightMode, Lighting, PowerSettings, Readout, Sensor, SensorChange};
-use crate::profile::{self, Profiles};
+use crate::profile::{self, Profiles, ReadoutScope};
 use gpui::{
     Bounds, Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, MouseButton, ObjectFit, PathPromptOptions, Pixels, Point, Render, ScrollHandle, StyledImage,
     Window, canvas, div, img, point, prelude::*, px, relative, rgb,
@@ -7,6 +7,7 @@ use gpui::{
 use std::{cell::Cell, rc::Rc};
 use std::sync::Arc;
 use std::path::PathBuf;
+use std::time::Duration;
 
 const TABS: [&str; 7] = ["Home", "Keys", "DPI", "Lighting", "Macro", "Settings", "About"];
 
@@ -69,7 +70,7 @@ pub struct Nibble {
 
 impl Nibble {
     pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool) -> Self {
-        if !demo { Self::scan(cx); }
+        if !demo { Self::scan(cx); Self::schedule_status_poll(cx); }
         let (profiles, profile_error, profiles_writable) = if demo {
             (Profiles::new(), None, true)
         } else if let Some(path) = profile::profile_path() {
@@ -145,15 +146,63 @@ impl Nibble {
                     Ok(data) => {
                         view.readout = Some(data);
                         view.error = None;
-                        if view.profiles_writable {
-                            if let Err(error) = view.sync_profile_from_readout() { view.message = Some(error); }
-                        }
                     }
                     Err(error) => { view.readout = None; view.error = Some(error); }
                 }
                 cx.notify();
             });
         }).detach();
+    }
+
+    fn schedule_status_poll(cx: &mut Context<Self>) {
+        let executor = cx.background_executor().clone();
+        cx.spawn(async move |view, cx| {
+            loop {
+                executor.timer(Duration::from_secs(15)).await;
+                if view.update(cx, |view, cx| view.poll_status(cx)).is_err() { break; }
+            }
+        }).detach();
+    }
+
+    fn poll_status(&mut self, cx: &mut Context<Self>) {
+        if self.demo || self.scanning || self.applying || self.dpi_drag.is_some() || self.light_drag.is_some()
+            || self.dpi_input.is_some() || self.color_input.is_some() { return; }
+        let Some(snapshot) = self.readout.clone() else {
+            self.scanning = true;
+            Self::scan(cx);
+            cx.notify();
+            return;
+        };
+        self.scanning = true;
+        let work = cx.background_executor().spawn(async move { device::poll_status(&snapshot) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.scanning = false;
+                match result {
+                    device::StatusPoll::Status(status) => {
+                        if let Some(data) = &mut view.readout {
+                            data.battery = status.battery;
+                            data.charging = status.charging;
+                            data.sleeping = status.sleeping;
+                        }
+                    }
+                    device::StatusPoll::Disconnected => {
+                        view.readout = None;
+                        view.error = Some("Receiver disconnected".into());
+                    }
+                    device::StatusPoll::Unsupported(error) => {
+                        view.readout = None;
+                        view.error = Some(error);
+                    }
+                    device::StatusPoll::Unavailable => {
+                        if let Some(data) = &mut view.readout { data.battery = None; data.charging = false; data.sleeping = false; }
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
     }
 
     fn set_theme(&mut self, dark: bool, cx: &mut Context<Self>) {
@@ -175,18 +224,18 @@ impl Nibble {
         self.profiles.save(&path)
     }
 
-    fn sync_profile_from_readout(&mut self) -> Result<(), String> {
+    fn sync_profile_from_readout(&mut self, scope: ReadoutScope) -> Result<(), String> {
         let Some(readout) = self.readout.as_ref() else { return Ok(()); };
         let previous = self.profiles.clone();
-        if let Err(error) = self.profiles.sync_readout(readout).and_then(|_| self.save_profiles()) {
+        if let Err(error) = self.profiles.sync_scope(readout, scope).and_then(|_| self.save_profiles()) {
             self.profiles = previous;
             return Err(format!("Could not save synchronized profile: {error}"));
         }
         Ok(())
     }
 
-    fn confirm_and_save(&mut self, message: &'static str) {
-        self.message = Some(match self.sync_profile_from_readout() { Ok(()) => message.into(), Err(error) => error });
+    fn confirm_and_save(&mut self, scope: ReadoutScope, message: &'static str) {
+        self.message = Some(match self.sync_profile_from_readout(scope) { Ok(()) => message.into(), Err(error) => error });
     }
 
     fn select_profile(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -455,7 +504,7 @@ impl Nibble {
                 match result {
                     Ok((active, count, stages)) => {
                         if let Some(data) = &mut view.readout { data.active_dpi = Some(active); data.dpi_count = Some(count); data.dpi = stages; }
-                        view.confirm_and_save("DPI value confirmed by receiver.");
+                        view.confirm_and_save(ReadoutScope::DpiValue(index), "DPI value confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.active_dpi = None; data.dpi_count = None; data.dpi.clear(); }
@@ -504,7 +553,7 @@ impl Nibble {
                             data.dpi_count = Some(count);
                             data.dpi = stages;
                         }
-                        view.confirm_and_save("DPI settings confirmed by receiver.");
+                        view.confirm_and_save(if is_count { ReadoutScope::DpiCount } else { ReadoutScope::DpiSelection }, "DPI settings confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout {
@@ -541,7 +590,7 @@ impl Nibble {
                 match result {
                     Ok(rate) => {
                         if let Some(data) = &mut view.readout { data.rate = Some(rate); }
-                        view.confirm_and_save("Report rate confirmed by receiver.");
+                        view.confirm_and_save(ReadoutScope::Rate, "Report rate confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.rate = None; }
@@ -579,7 +628,7 @@ impl Nibble {
                 match result {
                     Ok(sensor) => {
                         if let Some(data) = &mut view.readout { data.sensor = Some(sensor); }
-                        view.confirm_and_save("Sensor setting confirmed by receiver.");
+                        view.confirm_and_save(ReadoutScope::Sensor(change), "Sensor setting confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.sensor = None; }
@@ -650,7 +699,7 @@ impl Nibble {
                 match result {
                     Ok(keys) => {
                         if let Some(data) = &mut view.readout { data.keys = Some(keys); }
-                        view.confirm_and_save("Button assignment confirmed by receiver.");
+                        view.confirm_and_save(ReadoutScope::Key(index), "Button assignment confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.keys = None; }
@@ -668,7 +717,7 @@ impl Nibble {
         self.confirm_reset_keys = false;
         if self.demo {
             if let Some(data) = &mut self.readout { data.keys = Some(device::default_keymap()); }
-            self.confirm_and_save("Button assignments reset in sample data.");
+            self.confirm_and_save(ReadoutScope::Keys, "Button assignments reset in sample data.");
             cx.notify(); return;
         }
         if !self.experimental_write { return; }
@@ -683,7 +732,7 @@ impl Nibble {
                 match result {
                     Ok(keys) => {
                         if let Some(data) = &mut view.readout { data.keys = Some(keys); }
-                        view.confirm_and_save("Default button assignments confirmed by receiver.");
+                        view.confirm_and_save(ReadoutScope::Keys, "Default button assignments confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.keys = None; }
@@ -717,7 +766,7 @@ impl Nibble {
                 match result {
                     Ok(light) => {
                         if let Some(data) = &mut view.readout { data.lighting = Some(light); }
-                        view.confirm_and_save("Lighting settings confirmed by receiver.");
+                        view.confirm_and_save(ReadoutScope::Lighting(change), "Lighting settings confirmed by receiver.");
                     }
                     Err(error) => {
                         if let Some(data) = &mut view.readout { data.lighting = None; }

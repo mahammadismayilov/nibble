@@ -14,14 +14,16 @@ Build and run on Windows with a Rust MSVC toolchain and the Windows SDK:
 cargo run --release
 ```
 
-The prototype reports one snapshot and closes the HID handle. Use Refresh to
-read again. It does not continuously poll or reconnect. Appearance selection is
-saved separately from the original desktop app.
+The prototype closes the HID handle after each operation. It checks receiver
+status every 15 seconds and retries discovery after a disconnect. Use Refresh
+to read all supported settings again. Appearance selection is saved separately
+from the original desktop app.
 
 AJ179 / AJ179P profiles can be imported and exported in the original app's JSON
 format. Profiles and local preferences are stored separately from the Tauri app.
 Selecting or importing a profile currently updates local state only; it does not
-apply the profile to the mouse. Profile settings are not yet synchronized with
+apply the profile to the mouse. Scanning or reconnecting reads device settings
+without replacing the selected saved profile. Profile settings are not yet synchronized with
 all controls, and other mouse models are not supported by this preview.
 The DPI color swatch edits the selected profile's color as #RRGGBB. In experimental
 mode, Apply profile colors sends all six profile colors to the mouse and updates
