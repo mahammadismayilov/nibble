@@ -8,6 +8,9 @@ public static class CaptureWindow {
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
 }
 '@
 
@@ -17,14 +20,17 @@ $output = Join-Path $env:GITHUB_WORKSPACE 'visual-captures'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 if (-not (Test-Path -LiteralPath $exe)) { throw "Build artifact does not contain the GPUI executable at $exe" }
 
-$tabs = if ($Reference) { @('tauri-home') } else { @('home', 'keys', 'dpi', 'lighting', 'macro', 'settings', 'about') }
+$tabs = if ($Reference) { @('tauri-home', 'tauri-keys', 'tauri-dpi', 'tauri-lighting', 'tauri-macro', 'tauri-settings', 'tauri-about') }
+    else { @('home', 'keys', 'dpi', 'lighting', 'macro', 'settings', 'about', 'home-light', 'keys-light', 'dpi-light', 'lighting-light', 'macro-light', 'settings-light', 'about-light') }
 foreach ($tab in $tabs) {
     $stdout = Join-Path $output "$tab.stdout.txt"
     $stderr = Join-Path $output "$tab.stderr.txt"
     if ($Reference) {
         $process = Start-Process -FilePath $exe -PassThru -WindowStyle Normal -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     } else {
-        $process = Start-Process -FilePath $exe -ArgumentList @('--demo', "--demo-tab=$tab") -PassThru -WindowStyle Normal -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $argsForDemo = @('--demo', "--demo-tab=$($tab -replace '-light$', '')")
+        if ($tab.EndsWith('-light')) { $argsForDemo += '--demo-light' }
+        $process = Start-Process -FilePath $exe -ArgumentList $argsForDemo -PassThru -WindowStyle Normal -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     }
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(30)
@@ -40,6 +46,14 @@ foreach ($tab in $tabs) {
         $width = $rect.Right - $rect.Left
         $height = $rect.Bottom - $rect.Top
         if ($width -lt 600 -or $height -lt 400) { throw "Unexpected $tab window size: ${width}x${height}." }
+        if ($Reference -and $tab -ne 'tauri-home') {
+            $tabX = @{ 'tauri-keys' = 124; 'tauri-dpi' = 181; 'tauri-lighting' = 250; 'tauri-macro' = 323; 'tauri-settings' = 397; 'tauri-about' = 470 }[$tab]
+            if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw "Could not focus the Tauri window for $tab." }
+            if (-not [CaptureWindow]::SetCursorPos($rect.Left + $tabX, $rect.Top + 119)) { throw "Could not move the pointer for $tab." }
+            [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+            [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Seconds 2
+        }
         $bitmap = [System.Drawing.Bitmap]::new($width, $height)
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
         try {

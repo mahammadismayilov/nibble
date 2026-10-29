@@ -10,6 +10,7 @@ use std::borrow::Cow;
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     let demo = args.iter().any(|arg| arg == "--demo");
+    let demo_light = demo && args.iter().any(|arg| arg == "--demo-light");
     let demo_screen = if demo {
         args.iter().find_map(|arg| arg.strip_prefix("--demo-tab=")).and_then(|tab| {
             ["home", "keys", "dpi", "lighting", "macro", "settings", "about"].iter().position(|name| *name == tab)
@@ -38,7 +39,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            move |_, cx| cx.new(|cx| ui::Nibble::new(cx, demo, experimental_write, demo_screen)),
+            move |_, cx| cx.new(|cx| ui::Nibble::new(cx, demo, experimental_write, demo_screen, demo_light)),
         )
         .expect("Could not open Nibble prototype window");
         cx.activate(true);

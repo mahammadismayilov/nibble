@@ -69,7 +69,7 @@ pub struct Nibble {
 }
 
 impl Nibble {
-    pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool, demo_screen: usize) -> Self {
+    pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool, demo_screen: usize, demo_light: bool) -> Self {
         if !demo { Self::scan(cx); Self::schedule_status_poll(cx); }
         let (profiles, profile_error, profiles_writable) = if demo {
             (Profiles::new(), None, true)
@@ -97,7 +97,7 @@ impl Nibble {
         });
         Self {
             screen: if demo { demo_screen.min(TABS.len() - 1) } else { 0 },
-            dark: demo || load_theme(),
+            dark: if demo { !demo_light } else { load_theme() },
             demo,
             experimental_write,
             scanning: !demo,
