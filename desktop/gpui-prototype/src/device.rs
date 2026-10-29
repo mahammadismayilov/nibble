@@ -108,6 +108,40 @@ pub fn set_dpi_value(snapshot: &Readout, index: usize, value: u16) -> Result<(us
     set_dpi(snapshot, DpiChange::Value(index, value))
 }
 
+// The receiver does not expose a reliable readback for its complete color table.
+// The caller supplies all six profile colors and reports the table as sent only.
+pub fn set_dpi_colors(snapshot: &Readout, colors: [[u8; 3]; 6]) -> Result<Option<Lighting>, String> {
+    let (_api, mouse) = open_original_mouse(snapshot)?;
+    let (active, _, _) = query(&mouse, 0x13).and_then(|reply| parse_dpi(&reply))
+        .ok_or("Could not read the active DPI stage. No colors were sent.")?;
+    let mut light = query(&mouse, 0x15).and_then(|reply| parse_light(&reply))
+        .ok_or("Could not read lighting settings. No colors were sent.")?;
+    let light_update = if light.mode == LightMode::Off { None } else {
+        light.color = Some(colors[active]);
+        Some(light_packet(&light)?)
+    };
+    send_setting(&mouse, &dpi_color_packet(&colors)).map_err(|error| format!("{error} The mouse may have received the color table."))?;
+    if let Some(packet) = light_update {
+        send_setting(&mouse, &packet).map_err(|error| format!("DPI colors were sent, but lighting may not have updated: {error}"))?;
+        let readback = query(&mouse, 0x15).and_then(|reply| parse_light(&reply))
+            .ok_or("DPI colors were sent, but the lighting response was unavailable.")?;
+        if readback.mode != light.mode || readback.color != light.color || readback.brightness != light.brightness {
+            return Err("DPI colors were sent, but the mouse returned different lighting settings.".into());
+        }
+        Ok(Some(readback))
+    } else { Ok(None) }
+}
+
+fn dpi_color_packet(colors: &[[u8; 3]; 6]) -> [u8; 33] {
+    let mut packet = [0u8; 33];
+    packet[1] = 4; packet[3] = 1; packet[4] = 0x12;
+    for (index, color) in colors.iter().enumerate() {
+        packet[5 + index * 3..8 + index * 3].copy_from_slice(color);
+    }
+    packet[32] = packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    packet
+}
+
 enum DpiChange { Active(usize), Count(usize), Value(usize, u16) }
 
 fn apply_dpi_change(current: usize, current_count: usize, mut stages: Vec<u16>, change: DpiChange) -> Result<(usize, usize, Vec<u16>), String> {
@@ -513,6 +547,16 @@ mod tests {
         assert_eq!(model_id(&reply), None);
         assert!(check_model(&reply).is_ok());
         assert_eq!(model_id(&[0x10, 0, 0]), None);
+    }
+
+    #[test]
+    fn color_packet_sends_all_six_profile_colors_in_order() {
+        let colors = [[255, 0, 0], [0, 255, 0], [0x12, 0xab, 0xef], [0, 255, 255], [255, 255, 0], [128, 0, 128]];
+        let packet = dpi_color_packet(&colors);
+        assert_eq!(&packet[..5], &[0, 4, 0, 1, 0x12]);
+        assert_eq!(&packet[5..23], &[255, 0, 0, 0, 255, 0, 0x12, 0xab, 0xef, 0, 255, 255, 255, 255, 0, 128, 0, 128]);
+        assert!(packet[23..32].iter().all(|byte| *byte == 0));
+        assert_eq!(packet[32], packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)));
     }
 
     #[test]

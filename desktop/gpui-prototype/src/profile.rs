@@ -72,6 +72,24 @@ impl Profiles {
         Ok(())
     }
 
+    pub fn dpi_colors(&self) -> Result<[[u8; 3]; 6], String> {
+        let stages = self.current()["dpiStages"].as_array().ok_or("DPI colors are missing")?;
+        if stages.len() != 6 { return Err("DPI colors are incomplete".into()); }
+        let mut colors = [[0u8; 3]; 6];
+        for (stage, target) in stages.iter().zip(&mut colors) {
+            let color = stage["color"].as_str().ok_or("DPI color is missing")?;
+            let bytes = color.as_bytes();
+            if bytes.len() != 7 || bytes[0] != b'#' || !bytes[1..].iter().all(u8::is_ascii_hexdigit) {
+                return Err("DPI color is invalid".into());
+            }
+            for (channel, part) in target.iter_mut().zip(bytes[1..].chunks_exact(2)) {
+                let hex = std::str::from_utf8(part).map_err(|_| "DPI color is invalid")?;
+                *channel = u8::from_str_radix(hex, 16).map_err(|_| "DPI color is invalid")?;
+            }
+        }
+        Ok(colors)
+    }
+
     pub fn power(&self) -> Option<PowerSettings> {
         let settings = &self.current()["settings"];
         let raw = settings["sleepWire"].as_u64()?;
@@ -229,6 +247,7 @@ mod tests {
         let original = profiles.current()["dpiStages"].clone();
         profiles.set_dpi_color(2, "#12abEF").unwrap();
         assert_eq!(profiles.current()["dpiStages"][2]["color"], "#12ABEF");
+        assert_eq!(profiles.dpi_colors().unwrap()[2], [0x12, 0xab, 0xef]);
         for i in [0, 1, 3, 4, 5] { assert_eq!(profiles.current()["dpiStages"][i], original[i]); }
         let edited = profiles.current().clone();
         assert!(profiles.set_dpi_color(6, "#123456").is_err());

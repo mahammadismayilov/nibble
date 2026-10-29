@@ -317,6 +317,42 @@ impl Nibble {
         cx.notify();
     }
 
+    fn apply_profile_colors(&mut self, cx: &mut Context<Self>) {
+        if self.scanning || self.applying || self.color_input.is_some() || !self.profiles_writable { return; }
+        let colors = match self.profiles.dpi_colors() {
+            Ok(colors) => colors,
+            Err(error) => { self.message = Some(error); cx.notify(); return; }
+        };
+        if self.demo {
+            if let Some(data) = &mut self.readout {
+                if let (Some(stage), Some(light)) = (data.active_dpi, data.lighting.as_mut()) {
+                    if light.mode != LightMode::Off { light.color = Some(colors[stage]); }
+                }
+            }
+            cx.notify(); return;
+        }
+        if !self.experimental_write { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        self.applying = true;
+        self.message = Some("Sending six profile colors…".into());
+        let work = cx.background_executor().spawn(async move { device::set_dpi_colors(&snapshot, colors) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok(light) => {
+                        if let Some(light) = light { if let Some(data) = &mut view.readout { data.lighting = Some(light); } }
+                        view.message = Some("Six profile colors sent. The color table cannot be confirmed by the receiver.".into());
+                    }
+                    Err(error) => { if let Some(data) = &mut view.readout { data.lighting = None; } view.message = Some(error); }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
+    }
+
     fn handle_dpi_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         let Some(input) = self.dpi_input.as_mut() else { return; };
         let key = event.keystroke.key.as_str();
@@ -779,14 +815,21 @@ impl Nibble {
             .child(dpi_input)
             .child("LED Color")
             .child(color_control);
+        let mut apply_colors = div().id("apply-dpi-colors").rounded(px(7.0)).px(px(8.0)).py(px(5.0))
+            .text_size(px(11.0)).text_color(rgb(p.muted)).child("Apply profile colors");
+        if (self.demo || self.experimental_write) && self.profiles_writable && data.is_some() {
+            apply_colors = apply_colors.cursor_pointer().bg(rgb(p.inset)).text_color(rgb(p.text))
+                .on_click(cx.listener(|this, _, _, cx| this.apply_profile_colors(cx)));
+        }
         let hero = card(p).flex_1().h(px(520.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
             .child(div().flex().items_center().justify_between()
                 .child(div().flex().items_center().gap(px(20.0)).child(heading("DPI Sensitivity")).child(levels))
-                .child(muted(p, "Reset DPI")))
+                .child(div().flex().items_center().gap(px(8.0)).child(apply_colors).child(muted(p, "Reset DPI"))))
             .child(chart)
             .child(div().mt(px(25.0)).flex().items_center().justify_between().gap(px(20.0))
                 .child(stage_rows)
-                .child(fine_controls));
+                .child(fine_controls))
+            .child(muted(p, "Apply profile colors replaces all six colors on the mouse."));
         let mut rate_options = div().flex().flex_col().gap(px(8.0)).mt(px(14.0));
         for pair in [[125, 250], [500, 1000]] {
             let mut row = div().flex().gap(px(8.0));

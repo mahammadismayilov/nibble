@@ -23,8 +23,9 @@ format. Profiles and local preferences are stored separately from the Tauri app.
 Selecting or importing a profile currently updates local state only; it does not
 apply the profile to the mouse. Profile settings are not yet synchronized with
 all controls, and other mouse models are not supported by this preview.
-The DPI color swatch edits the selected profile's color as #RRGGBB. It does not
-send colors to the mouse; the receiver cannot reliably report its six-color table.
+The DPI color swatch edits the selected profile's color as #RRGGBB. In experimental
+mode, Apply profile colors sends all six profile colors to the mouse and updates
+the active lighting color. The receiver cannot reliably confirm the color table.
 
 For visual comparisons without accessing a receiver, run the executable with
 `--demo`. This mode displays sample data and disables receiver scans.
