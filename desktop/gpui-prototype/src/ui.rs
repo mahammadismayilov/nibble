@@ -842,6 +842,7 @@ impl Nibble {
                 }))
                 .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                     if event.pressed_button == Some(MouseButton::Left) { this.move_dpi_drag(event.position, cx); }
+                    else if this.dpi_drag.take().is_some() { cx.notify(); }
                 }))
                 .on_mouse_up(MouseButton::Left, cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| this.finish_dpi_drag(event.position, cx)))
                 .on_mouse_up_out(MouseButton::Left, cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| this.finish_dpi_drag(event.position, cx)));
