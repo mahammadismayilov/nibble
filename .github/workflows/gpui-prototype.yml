@@ -60,3 +60,25 @@ jobs:
           path: visual-captures/
           if-no-files-found: warn
 
+  reference-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the original Tauri release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force capture-input | Out-Null
+          Invoke-WebRequest -Uri 'https://github.com/mahammadismayilov/nibble/releases/download/v1.0.6/nibble-desktop.exe' -OutFile 'capture-input/nibble-reference.exe'
+          $actual = (Get-FileHash -Algorithm SHA256 'capture-input/nibble-reference.exe').Hash
+          if ($actual -ne 'e1fb756b2c5b15353380351d6c378ae785af688bdc429300e2ec1f1adc149bbb') { throw "Unexpected reference executable SHA-256: $actual" }
+      - name: Capture the original Tauri app
+        shell: pwsh
+        run: ./desktop/gpui-prototype/scripts/capture-demo.ps1 -Reference
+      - name: Upload reference capture and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nibble-tauri-reference-windows
+          path: visual-captures/
+          if-no-files-found: warn
+

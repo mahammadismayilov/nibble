@@ -1,3 +1,4 @@
+param([switch]$Reference)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
@@ -10,15 +11,21 @@ public static class CaptureWindow {
 }
 '@
 
-$exe = Join-Path $env:GITHUB_WORKSPACE 'capture-input/target/release/nibble-gpui-prototype.exe'
+$exe = if ($Reference) { Join-Path $env:GITHUB_WORKSPACE 'capture-input/nibble-reference.exe' }
+    else { Join-Path $env:GITHUB_WORKSPACE 'capture-input/target/release/nibble-gpui-prototype.exe' }
 $output = Join-Path $env:GITHUB_WORKSPACE 'visual-captures'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 if (-not (Test-Path -LiteralPath $exe)) { throw "Build artifact does not contain the GPUI executable at $exe" }
 
-foreach ($tab in @('home', 'keys', 'dpi', 'lighting', 'macro', 'settings', 'about')) {
+$tabs = if ($Reference) { @('tauri-home') } else { @('home', 'keys', 'dpi', 'lighting', 'macro', 'settings', 'about') }
+foreach ($tab in $tabs) {
     $stdout = Join-Path $output "$tab.stdout.txt"
     $stderr = Join-Path $output "$tab.stderr.txt"
-    $process = Start-Process -FilePath $exe -ArgumentList @('--demo', "--demo-tab=$tab") -PassThru -WindowStyle Normal -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if ($Reference) {
+        $process = Start-Process -FilePath $exe -PassThru -WindowStyle Normal -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    } else {
+        $process = Start-Process -FilePath $exe -ArgumentList @('--demo', "--demo-tab=$tab") -PassThru -WindowStyle Normal -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    }
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(30)
         do {
@@ -27,7 +34,7 @@ foreach ($tab in @('home', 'keys', 'dpi', 'lighting', 'macro', 'settings', 'abou
             if ($process.HasExited) { throw "GPUI exited before opening the $tab window. See $tab.stderr.txt." }
         } while ($process.MainWindowHandle -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $deadline)
         if ($process.MainWindowHandle -eq [IntPtr]::Zero) { throw "GPUI did not open the $tab window within 30 seconds." }
-        Start-Sleep -Seconds 3
+        if ($Reference) { Start-Sleep -Seconds 10 } else { Start-Sleep -Seconds 3 }
         $rect = New-Object CaptureWindow+Rect
         if (-not [CaptureWindow]::GetWindowRect($process.MainWindowHandle, [ref]$rect)) { throw "Could not get the $tab window bounds." }
         $width = $rect.Right - $rect.Left
