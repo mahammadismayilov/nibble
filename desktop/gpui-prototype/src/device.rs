@@ -261,7 +261,8 @@ pub fn reset_keys(snapshot: &Readout) -> Result<[[u8; 3]; 6], String> {
         return Err("Could not read the complete keymap. No settings were sent.".into());
     }
     let keys = default_keymap();
-    send_setting(&mouse, &keymap_packet(&keys))?;
+    send_setting(&mouse, &keymap_packet(&keys))
+        .map_err(|error| format!("{error} The mouse may have received the key reset."))?;
     let readback = query(&mouse, 0x19).and_then(|reply| parse_keymap(&reply))
         .ok_or("Key reset was sent, but the mouse did not confirm it. Refresh before trying again.")?;
     if readback != keys { return Err("The mouse returned a different keymap. Refresh before trying again.".into()); }

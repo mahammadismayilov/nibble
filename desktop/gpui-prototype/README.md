@@ -35,6 +35,7 @@ controls. For DPI, report rate, sensor, keymap, and lighting changes, the app
 reads current settings before sending a change and checks the response afterward.
 A stage switch and restoration were tested on an AJ179P;
 other writes have packet tests but have not been tested on physical hardware.
+Reset all keys requires confirmation and restores the default button map.
 Left-click remains locked. Lighting may require a previously read color to turn
 back on after the mouse reports an off state. Other settings are still previews.
 Power settings are sent from the selected profile without device readback.
