@@ -115,6 +115,40 @@ foreach ($tab in $tabs) {
             } elseif ($tab -eq 'dpi-light') {
                 throw "Stage-selection check requires the expected 1040x711 runner window, got ${width}x${height}."
             }
+            if ($tab -eq 'dpi-light') {
+                if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the DPI demo for reset.' }
+                foreach ($x in @(648, 600)) {
+                    if (-not [CaptureWindow]::SetCursorPos($rect.Left + $x, $rect.Top + 197)) { throw 'Could not position the pointer for DPI reset.' }
+                    [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                    [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                    Start-Sleep -Seconds 1
+                }
+                $resetDpiBitmap = [System.Drawing.Bitmap]::new($width, $height)
+                $resetDpiGraphics = [System.Drawing.Graphics]::FromImage($resetDpiBitmap)
+                try {
+                    $resetDpiDc = $resetDpiGraphics.GetHdc()
+                    try { $resetDpiPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $resetDpiDc, 2) }
+                    finally { $resetDpiGraphics.ReleaseHdc($resetDpiDc) }
+                    if (-not $resetDpiPrinted) { throw 'Could not capture the DPI reset.' }
+                    $resetDpiBitmap.Save((Join-Path $output 'dpi-light-reset.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                    if ($resetDpiBitmap.GetPixel(230, 450).ToArgb() -eq $bitmap.GetPixel(230, 450).ToArgb()) { throw 'DPI reset did not select default stage 2.' }
+                    if ($resetDpiBitmap.GetPixel(300, 550).ToArgb() -eq $bitmap.GetPixel(300, 550).ToArgb()) { throw 'DPI reset did not clear the old stage 6 highlight.' }
+                    $stageValueChanged = 0
+                    $selectedBitmap = [System.Drawing.Bitmap]::new((Join-Path $output 'dpi-light-stage2.png'))
+                    try {
+                        for ($y = 530; $y -lt 570; $y++) {
+                            for ($x = 320; $x -lt 400; $x++) {
+                                if ($selectedBitmap.GetPixel($x, $y).ToArgb() -ne $resetDpiBitmap.GetPixel($x, $y).ToArgb()) { $stageValueChanged++ }
+                            }
+                        }
+                    } finally { $selectedBitmap.Dispose() }
+                    if ($stageValueChanged -lt 30) { throw 'DPI reset did not change the stage 6 value.' }
+                    Write-Output 'Demo DPI reset selected stage 2 and cleared stage 6.'
+                } finally {
+                    $resetDpiGraphics.Dispose()
+                    $resetDpiBitmap.Dispose()
+                }
+            }
             if ($tab -eq 'lighting-light') {
                 if ($width -ne 1040 -or $height -ne 711) { throw "Lighting reset check requires a 1040x711 window, got ${width}x${height}." }
                 if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the lighting demo.' }
