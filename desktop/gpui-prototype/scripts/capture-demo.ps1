@@ -1,4 +1,4 @@
-param([switch]$Reference)
+param([switch]$Reference, [string]$InputDirectory = 'capture-input')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
@@ -15,7 +15,7 @@ public static class CaptureWindow {
 '@
 
 $exe = if ($Reference) { Join-Path $env:GITHUB_WORKSPACE 'capture-input/nibble-reference.exe' }
-    else { Join-Path $env:GITHUB_WORKSPACE 'capture-input/target/release/nibble-gpui-prototype.exe' }
+    else { Join-Path $env:GITHUB_WORKSPACE "$InputDirectory/target/release/nibble-gpui-prototype.exe" }
 $output = Join-Path $env:GITHUB_WORKSPACE 'visual-captures'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 if (-not (Test-Path -LiteralPath $exe)) { throw "Build artifact does not contain the GPUI executable at $exe" }

@@ -94,12 +94,31 @@ jobs:
       - name: Measure temporary GPUI presentation experiment
         shell: pwsh
         run: ./desktop/gpui-prototype/scripts/measure-performance.ps1 -InputDirectory desktop/gpui-prototype -OutputDirectory performance-results/experimental
+      - name: Check temporary build rendering and interactions
+        shell: pwsh
+        run: ./desktop/gpui-prototype/scripts/capture-demo.ps1 -InputDirectory desktop/gpui-prototype
+      - name: Upload experimental executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: nibble-gpui-performance-experiment-windows
+          path: |
+            desktop/gpui-prototype/target/release/nibble-gpui-prototype.exe
+            desktop/gpui-prototype/assets/fonts/Outfit-OFL.txt
+            desktop/gpui-prototype/assets/fonts/JetBrainsMono-OFL.txt
+          if-no-files-found: error
       - name: Upload performance report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nibble-gpui-performance-windows
           path: performance-results/
+          if-no-files-found: warn
+      - name: Upload temporary build visual checks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nibble-gpui-performance-visual-windows
+          path: visual-captures/
           if-no-files-found: warn
 
   reference-windows:
