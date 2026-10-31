@@ -42,9 +42,16 @@ foreach ($tab in $tabs) {
         if ($process.MainWindowHandle -eq [IntPtr]::Zero) { throw "GPUI did not open the $tab window within 30 seconds." }
         if ($Reference) { Start-Sleep -Seconds 10 } else { Start-Sleep -Seconds 3 }
         $rect = New-Object CaptureWindow+Rect
-        if (-not [CaptureWindow]::GetWindowRect($process.MainWindowHandle, [ref]$rect)) { throw "Could not get the $tab window bounds." }
-        $width = $rect.Right - $rect.Left
-        $height = $rect.Bottom - $rect.Top
+        $boundsDeadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $process.Refresh()
+            if ($process.HasExited) { throw "The $tab app exited before its window was ready." }
+            if (-not [CaptureWindow]::GetWindowRect($process.MainWindowHandle, [ref]$rect)) { throw "Could not get the $tab window bounds." }
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            if ($width -ge 600 -and $height -ge 400) { break }
+            Start-Sleep -Milliseconds 500
+        } while ([DateTime]::UtcNow -lt $boundsDeadline)
         if ($width -lt 600 -or $height -lt 400) { throw "Unexpected $tab window size: ${width}x${height}." }
         if ($Reference -and $tab -ne 'tauri-home') {
             $tabX = @{ 'tauri-keys' = 124; 'tauri-dpi' = 181; 'tauri-lighting' = 250; 'tauri-macro' = 323; 'tauri-settings' = 397; 'tauri-about' = 470 }[$tab]
