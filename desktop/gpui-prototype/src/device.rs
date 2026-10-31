@@ -88,31 +88,42 @@ pub fn read_mouse() -> Result<Readout, String> {
 }
 
 fn probe_mouse(mouse: &HidDevice, result: &mut Readout) -> Result<(), String> {
-    if let Some(reply) = query(&mouse, 0x10) {
+    populate_readout(result, |command| query(mouse, command))
+}
+
+fn populate_readout(result: &mut Readout, mut get_reply: impl FnMut(u8) -> Option<[u8; 33]>) -> Result<(), String> {
+    let mut responded = false;
+    if let Some(reply) = get_reply(0x10) {
         check_model(&reply)?;
+        responded = true;
         result.model_confirmed = model_id(&reply) == Some(*b"M179");
         parse_battery(&reply, result);
     }
-    if let Some(reply) = query(&mouse, 0x12) {
+    if let Some(reply) = get_reply(0x12) {
         result.rate = parse_rate(&reply);
+        responded |= result.rate.is_some();
     }
-    if let Some(reply) = query(&mouse, 0x13) {
+    if let Some(reply) = get_reply(0x13) {
         if let Some((active, count, stages)) = parse_dpi(&reply) {
             result.active_dpi = Some(active);
             result.dpi_count = Some(count);
             result.dpi = stages;
+            responded = true;
         }
     }
-    if let Some(reply) = query(&mouse, 0x15) {
+    if let Some(reply) = get_reply(0x15) {
         result.lighting = parse_light(&reply);
+        responded |= result.lighting.is_some();
     }
-    if let Some(reply) = query(&mouse, 0x16) {
+    if let Some(reply) = get_reply(0x16) {
         result.sensor = parse_sensor(&reply);
+        responded |= result.sensor.is_some();
     }
-    if let Some(reply) = query(&mouse, 0x19) {
+    if let Some(reply) = get_reply(0x19) {
         result.keys = parse_keymap(&reply);
+        responded |= result.keys.is_some();
     }
-    Ok(())
+    if responded { Ok(()) } else { Err("Receiver interface did not respond to mouse queries".into()) }
 }
 
 fn readout_quality(readout: &Readout) -> usize {
@@ -639,6 +650,33 @@ fn parse_dpi(buf: &[u8]) -> Option<(usize, usize, Vec<u16>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn probe_rejects_silent_interfaces_but_keeps_sleeping_or_partial_receivers() {
+        let mut empty = Readout::default();
+        assert!(populate_readout(&mut empty, |_| None).is_err());
+
+        let mut sleeping = Readout::default();
+        let mut status = [0u8; 33];
+        status[1] = 0xc0;
+        assert!(populate_readout(&mut sleeping, |cmd| (cmd == 0x10).then_some(status)).is_ok());
+        assert!(sleeping.sleeping);
+        assert!(!sleeping.model_confirmed);
+
+        let mut partial = Readout::default();
+        let mut rate = [0u8; 33];
+        rate[1] = 0x12; rate[4] = 1; rate[5] = 1;
+        assert!(populate_readout(&mut partial, |cmd| (cmd == 0x12).then_some(rate)).is_ok());
+        assert_eq!(partial.rate, Some(1000));
+        assert!(!partial.model_confirmed);
+
+        let mut wrong = Readout::default();
+        let mut foreign = [0u8; 33];
+        foreign[1] = 0x10; foreign[5..9].copy_from_slice(b"M129");
+        let mut queries = Vec::new();
+        assert!(populate_readout(&mut wrong, |cmd| { queries.push(cmd); (cmd == 0x10).then_some(foreign) }).is_err());
+        assert_eq!(queries, vec![0x10]);
+    }
 
     #[test]
     fn status_poll_distinguishes_sleeping_from_reported_battery() {
