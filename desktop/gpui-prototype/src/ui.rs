@@ -266,7 +266,7 @@ impl Nibble {
             self.message = Some("Disconnected. Receiver polling is paused.".into());
             self.dpi_drag = None; self.dpi_input = None; self.light_drag = None;
             self.color_input = None; self.color_stage = None; self.pending_left_key = None;
-            self.confirm_reset_keys = false; self.confirm_reset_lighting = false; self.confirm_reset_dpi = false;
+            self.confirm_reset_keys = false; self.confirm_reset_lighting = false; self.confirm_reset_dpi = false; self.confirm_reset_profiles = false;
         }
         cx.notify();
     }
@@ -324,6 +324,7 @@ impl Nibble {
         self.color_input = None;
         self.color_stage = None;
         self.pending_left_key = None;
+        self.confirm_reset_profiles = false;
         let previous = self.profiles.clone();
         let result = self.profiles.select(index).and_then(|_| self.save_profiles());
         if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
@@ -359,6 +360,8 @@ impl Nibble {
     fn import_profile(&mut self, cx: &mut Context<Self>) {
         if self.scanning || self.applying { self.message = Some("Wait until the current device operation finishes.".into()); cx.notify(); return; }
         if !self.profiles_writable { self.message = Some("Saved profiles could not be loaded; import is disabled.".into()); cx.notify(); return; }
+        self.confirm_reset_profiles = false;
+        cx.notify();
         let picker = cx.prompt_for_paths(PathPromptOptions { files: true, directories: false, multiple: false, prompt: Some("Import profile".into()) });
         cx.spawn(async move |view, cx| {
             let result = picker.await;
