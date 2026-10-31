@@ -17,6 +17,10 @@ fn main() {
         }).unwrap_or(0)
     } else { 0 };
     let experimental_write = args.iter().any(|arg| arg == "--experimental-write") && !demo;
+    let background = if demo {
+        args.iter().find_map(|arg| arg.strip_prefix("--demo-background="))
+            .map(ui::BackgroundStyle::parse).unwrap_or_default()
+    } else { ui::load_background() };
     Application::new().run(move |cx: &mut App| {
         if let Err(error) = cx.text_system().add_fonts(vec![
             Cow::Borrowed(include_bytes!("../assets/fonts/Outfit.ttf").as_slice()),
@@ -33,16 +37,16 @@ fn main() {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_min_size: Some(size(px(900.0), px(650.0))),
+                window_background: background.appearance(),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Nibble — Mouse Configuration".into()),
                     ..Default::default()
                 }),
                 ..Default::default()
             },
-            move |_, cx| cx.new(|cx| ui::Nibble::new(cx, demo, experimental_write, demo_screen, demo_light)),
+            move |_, cx| cx.new(|cx| ui::Nibble::new(cx, demo, experimental_write, demo_screen, demo_light, background)),
         )
         .expect("Could not open Nibble prototype window");
         cx.activate(true);
     });
 }
-

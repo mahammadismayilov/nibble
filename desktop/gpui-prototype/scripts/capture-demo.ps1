@@ -191,6 +191,30 @@ foreach ($tab in $tabs) {
                             }
                             if ($scrollChanged -lt 100) { throw 'The settings page did not visibly scroll.' }
                             Write-Output "Settings scrolling changed $scrollChanged sampled pixels."
+                            if (-not [CaptureWindow]::SetCursorPos($rect.Left + 889, $rect.Top + 582)) { throw 'Could not position the pointer for the background style.' }
+                            [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                            [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                            Start-Sleep -Seconds 1
+                            $backgroundBitmap = [System.Drawing.Bitmap]::new($width, $height)
+                            $backgroundGraphics = [System.Drawing.Graphics]::FromImage($backgroundBitmap)
+                            try {
+                                $backgroundDc = $backgroundGraphics.GetHdc()
+                                try { $backgroundPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $backgroundDc, 2) }
+                                finally { $backgroundGraphics.ReleaseHdc($backgroundDc) }
+                                if (-not $backgroundPrinted) { throw 'Could not capture the selected background style.' }
+                                $backgroundBitmap.Save((Join-Path $output 'settings-light-background-selected.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                                $backgroundChanged = 0
+                                for ($y = 555; $y -lt 610; $y++) {
+                                    for ($x = 800; $x -lt 992; $x++) {
+                                        if ($scrolledBitmap.GetPixel($x, $y).ToArgb() -ne $backgroundBitmap.GetPixel($x, $y).ToArgb()) { $backgroundChanged++ }
+                                    }
+                                }
+                                if ($backgroundChanged -lt 50) { throw 'Selecting a background style did not change the control.' }
+                                Write-Output "Background style selection changed $backgroundChanged pixels."
+                            } finally {
+                                $backgroundGraphics.Dispose()
+                                $backgroundBitmap.Dispose()
+                            }
                         } finally {
                             $scrolledGraphics.Dispose()
                             $scrolledBitmap.Dispose()

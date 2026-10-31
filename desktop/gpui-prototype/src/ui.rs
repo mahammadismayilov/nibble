@@ -2,7 +2,7 @@ use crate::device::{self, LightChange, LightMode, Lighting, PowerSettings, Reado
 use crate::profile::{self, Profiles, ReadoutScope};
 use gpui::{
     Bounds, Context, Div, FocusHandle, FontWeight, Image, ImageFormat, IntoElement, KeyDownEvent, MouseButton, ObjectFit, PathPromptOptions, Pixels, Point, Render, ScrollHandle, StyledImage,
-    Window, canvas, div, img, point, prelude::*, px, relative, rgb,
+    Window, WindowBackgroundAppearance, canvas, div, img, point, prelude::*, px, relative, rgb, rgba,
 };
 use std::{cell::Cell, rc::Rc};
 use std::sync::Arc;
@@ -10,6 +10,23 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 const TABS: [&str; 7] = ["Home", "Keys", "DPI", "Lighting", "Macro", "Settings", "About"];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum BackgroundStyle { #[default] Solid, Frosted, Clear }
+
+impl BackgroundStyle {
+    pub(crate) fn parse(value: &str) -> Self {
+        match value.trim() { "frosted" => Self::Frosted, "clear" => Self::Clear, _ => Self::Solid }
+    }
+
+    fn name(self) -> &'static str {
+        match self { Self::Solid => "solid", Self::Frosted => "frosted", Self::Clear => "clear" }
+    }
+
+    pub(crate) fn appearance(self) -> WindowBackgroundAppearance {
+        match self { Self::Solid => WindowBackgroundAppearance::Opaque, Self::Frosted => WindowBackgroundAppearance::Blurred, Self::Clear => WindowBackgroundAppearance::Transparent }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct Palette {
@@ -37,6 +54,7 @@ impl Palette {
 pub struct Nibble {
     screen: usize,
     dark: bool,
+    background: BackgroundStyle,
     demo: bool,
     experimental_write: bool,
     scanning: bool,
@@ -70,7 +88,7 @@ pub struct Nibble {
 }
 
 impl Nibble {
-    pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool, demo_screen: usize, demo_light: bool) -> Self {
+    pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool, demo_screen: usize, demo_light: bool, background: BackgroundStyle) -> Self {
         if !demo { Self::scan(cx); Self::schedule_status_poll(cx); }
         let (profiles, profile_error, profiles_writable) = if demo {
             (Profiles::new(), None, true)
@@ -99,6 +117,7 @@ impl Nibble {
         Self {
             screen: if demo { demo_screen.min(TABS.len() - 1) } else { 0 },
             dark: if demo { !demo_light } else { load_theme() },
+            background,
             demo,
             experimental_write,
             scanning: !demo,
@@ -215,6 +234,19 @@ impl Nibble {
                     && std::fs::write(path, if dark { "dark" } else { "light" }).is_ok();
                 if !saved { self.message = Some("Could not save appearance preference.".into()); }
             }
+        }
+        cx.notify();
+    }
+
+    fn set_background(&mut self, style: BackgroundStyle, window: &mut Window, cx: &mut Context<Self>) {
+        self.background = style;
+        window.set_background_appearance(style.appearance());
+        if !self.demo {
+            let saved = background_path().is_some_and(|path| {
+                path.parent().is_some_and(|parent| std::fs::create_dir_all(parent).is_ok())
+                    && std::fs::write(path, style.name()).is_ok()
+            });
+            if !saved { self.message = Some("Could not save background preference.".into()); }
         }
         cx.notify();
     }
@@ -884,7 +916,7 @@ impl Nibble {
             tabs = tabs.child(
                 div().id(("tab", index)).cursor_pointer().rounded(px(8.0))
                     .h(px(44.0)).px(px(15.0)).flex().items_center()
-                    .bg(rgb(if selected { p.accent_soft } else { p.bg }))
+                    .bg(if selected { rgb(p.accent_soft) } else { rgba(p.bg << 8) })
                     .text_color(rgb(if selected { p.accent } else { p.muted }))
                     .font_weight(if selected { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
                     .child(*label)
@@ -1299,6 +1331,14 @@ impl Nibble {
         }).unwrap_or("— not connected —");
         let usb_id = self.readout.as_ref().map(|data| format!("{:04X}:{:04X}", data.vid, data.pid))
             .unwrap_or_else(|| "—".to_string());
+        let mut background_options = div().flex().rounded(px(8.0)).bg(rgb(p.inset)).p(px(4.0));
+        for (index, (style, label)) in [(BackgroundStyle::Solid, "Solid"), (BackgroundStyle::Frosted, "Frosted"), (BackgroundStyle::Clear, "Clear")].into_iter().enumerate() {
+            let selected = self.background == style;
+            background_options = background_options.child(div().id(("background-style", index)).cursor_pointer()
+                .rounded(px(6.0)).px(px(10.0)).py(px(8.0))
+                .bg(rgb(if selected { p.hover } else { p.inset })).text_color(rgb(if selected { p.accent } else { p.text }))
+                .child(label).on_click(cx.listener(move |this, _, window, cx| this.set_background(style, window, cx))));
+        }
         let system = card(p).mt(px(12.0)).child(heading("System"))
             .child(div().flex().gap(px(10.0)).mt(px(10.0))
                 .child(info_tile(p, "App", "Nibble 1.0.6"))
@@ -1314,6 +1354,10 @@ impl Nibble {
                     .child(div().id("theme-dark").cursor_pointer().rounded(px(6.0)).px(px(12.0)).py(px(8.0))
                         .bg(rgb(if self.dark { p.hover } else { p.inset })).child("Dark")
                         .on_click(cx.listener(|this, _, _, cx| this.set_theme(true, cx))))))
+            .child(div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
+                .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Background"))
+                    .child(muted(p, "Choose a window style")))
+                .child(background_options))
             .child(field(p, "Left-click lock", "Prevents accidental rebinding of LMB", "On"))
             .child(div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
                 .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Profile backup"))
@@ -1375,7 +1419,8 @@ impl Render for Nibble {
             else if let Some(message) = &self.message { message.clone() }
             else if self.experimental_write { "Experimental mode · DPI, report rate, and sensor controls can change the receiver. Close other mouse software.".into() }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
-        div().size_full().bg(rgb(p.bg)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
+        let background_alpha = match self.background { BackgroundStyle::Solid => 0xff, BackgroundStyle::Frosted => 0xb8, BackgroundStyle::Clear => 0x88 };
+        div().size_full().bg(rgba((p.bg << 8) | background_alpha)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
             .flex().flex_col().px(px(20.0)).pt(px(8.0))
             .child(self.header(p, cx))
             .child(div().id("content").track_scroll(&self.content_scroll).flex_1().min_h(px(0.0)).overflow_y_scroll().pt(px(5.0)).child(page))
@@ -1389,6 +1434,15 @@ fn heading(label: &'static str) -> Div {
 
 fn theme_path() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("Nibble-gpui").join("theme"))
+}
+
+fn background_path() -> Option<PathBuf> {
+    theme_path().map(|path| path.with_file_name("background"))
+}
+
+pub(crate) fn load_background() -> BackgroundStyle {
+    background_path().and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|value| BackgroundStyle::parse(&value)).unwrap_or_default()
 }
 
 fn load_theme() -> bool {
@@ -1466,6 +1520,15 @@ fn next_reported_speed(current: u8, increasing: bool) -> u8 {
 #[cfg(test)]
 mod dpi_track_tests {
     use super::*;
+
+    #[test]
+    fn background_preferences_round_trip_and_default_safely() {
+        for style in [BackgroundStyle::Solid, BackgroundStyle::Frosted, BackgroundStyle::Clear] {
+            assert_eq!(BackgroundStyle::parse(style.name()), style);
+        }
+        assert_eq!(BackgroundStyle::parse("unknown"), BackgroundStyle::Solid);
+        assert_eq!(BackgroundStyle::parse("  frosted\n"), BackgroundStyle::Frosted);
+    }
 
     #[test]
     fn track_uses_logarithmic_scale_and_respects_step_and_limits() {
