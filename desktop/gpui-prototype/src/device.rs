@@ -337,6 +337,12 @@ fn sensor_packet(sensor: &Sensor) -> [u8; 33] {
 #[derive(Clone, Copy)]
 pub enum LightChange { Mode(LightMode), Brightness(u8), Speed(u8), Reset }
 
+fn reset_lighting_values(light: &mut Lighting) {
+    light.mode = LightMode::Breathing;
+    light.brightness = 100;
+    light.speed = 5;
+}
+
 pub fn set_lighting(snapshot: &Readout, change: LightChange) -> Result<Lighting, String> {
     let (_api, mouse) = open_original_mouse(snapshot)?;
     let mut light = query(&mouse, 0x15).and_then(|reply| parse_light(&reply))
@@ -348,7 +354,7 @@ pub fn set_lighting(snapshot: &Readout, change: LightChange) -> Result<Lighting,
         LightChange::Mode(mode) => light.mode = mode,
         LightChange::Brightness(value) if light.mode != LightMode::Off && value <= 100 && value % 25 == 0 => light.brightness = value,
         LightChange::Speed(value) if light.mode == LightMode::Breathing && (1..=10).contains(&value) => light.speed = value,
-        LightChange::Reset => { light.mode = LightMode::Breathing; light.brightness = 100; light.speed = 5; },
+        LightChange::Reset => reset_lighting_values(&mut light),
         _ => return Err("Unsupported lighting value. No settings were sent.".into()),
     }
     let packet = light_packet(&light)?;
@@ -714,6 +720,17 @@ mod tests {
         assert_eq!(&packet[26..29], &[1, 2, 3]);
         assert_eq!(packet[32], packet[5..32].iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)));
         assert!(light_packet(&Lighting { color: None, ..light }).is_err());
+    }
+
+    #[test]
+    fn lighting_reset_packet_uses_defaults_and_preserves_the_read_color() {
+        let mut light = Lighting { mode: LightMode::Off, brightness: 25, speed: 1, color: Some([1, 2, 3]) };
+        reset_lighting_values(&mut light);
+        let packet = light_packet(&light).unwrap();
+        assert_eq!(&packet[..11], &[0, 5, 0, 1, 0x18, 2, 0x42, 7, 1, 2, 3]);
+        assert_eq!(light.color, Some([1, 2, 3]));
+        light.color = None;
+        assert!(light_packet(&light).is_err());
     }
 
     #[test]
