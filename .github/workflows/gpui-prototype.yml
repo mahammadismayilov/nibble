@@ -66,6 +66,26 @@ jobs:
           path: visual-captures/
           if-no-files-found: warn
 
+  performance-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: nibble-gpui-prototype-windows
+          path: capture-input
+      - name: Measure demo at idle and during pointer movement
+        shell: pwsh
+        run: ./desktop/gpui-prototype/scripts/measure-performance.ps1
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nibble-gpui-performance-windows
+          path: performance-results/
+          if-no-files-found: warn
+
   reference-windows:
     runs-on: windows-latest
     steps:
