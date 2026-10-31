@@ -799,6 +799,18 @@ impl Nibble {
 
     fn update_sensor(&mut self, change: SensorChange, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
+        if !self.demo && self.readout.is_none() {
+            let mut data = self.profiles.saved_readout();
+            let Some(sensor) = &mut data.sensor else { return; };
+            match change {
+                SensorChange::Lod(value) if (1..=2).contains(&value) => sensor.lod = value,
+                SensorChange::Lod(_) => return,
+                SensorChange::AngleSnap(value) => sensor.angle_snap = value,
+                SensorChange::Ripple(value) => sensor.ripple = value,
+            }
+            self.save_offline_scope(&data, ReadoutScope::Sensor(change), cx);
+            return;
+        }
         if self.demo {
             if let Some(sensor) = self.readout.as_mut().and_then(|data| data.sensor.as_mut()) {
                 match change {
@@ -837,6 +849,14 @@ impl Nibble {
 
     fn update_power(&mut self, power: PowerSettings, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
+        if !self.demo && self.readout.is_none() {
+            if !self.profiles_writable { return; }
+            let previous = self.profiles.clone();
+            let result = self.profiles.set_power(&power).and_then(|_| self.save_profiles());
+            if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
+            else { self.message = Some("Power settings saved in the profile. Mouse settings were not changed.".into()); }
+            cx.notify(); return;
+        }
         if self.demo {
             if let Err(error) = self.profiles.set_power(&power) { self.message = Some(error); }
             cx.notify(); return;
@@ -1438,7 +1458,9 @@ impl Nibble {
         let fine_dpi = local["fineDpi"].as_bool().unwrap_or(false);
         let left_locked = local["lmbLock"].as_bool().unwrap_or(true);
         let mode_24g = local["mode"].as_str() == Some("24g");
-        let sensor = self.readout.as_ref().and_then(|data| data.sensor.as_ref());
+        let saved = (!self.demo && self.readout.is_none()).then(|| self.profiles.saved_readout());
+        let sensor = self.readout.as_ref().or(saved.as_ref()).and_then(|data| data.sensor.as_ref());
+        let can_edit = (self.demo || self.experimental_write && self.readout.is_some()) || (saved.is_some() && self.profiles_writable);
         let power = self.profiles.power();
         let angle = sensor.map(|s| if s.angle_snap { "On" } else { "Off" }).unwrap_or("—");
         let ripple = sensor.map(|s| if s.ripple { "On" } else { "Off" }).unwrap_or("—");
@@ -1448,7 +1470,7 @@ impl Nibble {
             let mut option = div().id(("sensor-lod", value as usize)).rounded(px(6.0)).px(px(12.0)).py(px(8.0))
                 .bg(rgb(if selected { p.accent_soft } else { p.inset }))
                 .text_color(rgb(if selected { p.accent } else { p.text })).child(label);
-            if sensor.is_some() && (self.demo || self.experimental_write) && !selected {
+            if sensor.is_some() && can_edit && !selected {
                 option = option.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::Lod(value), cx)));
             }
             lod_options = lod_options.child(option);
@@ -1459,7 +1481,7 @@ impl Nibble {
             .child(lod_options);
         let mut angle_field = field(p, "Angle Snap", "Straighten out slight angle offsets", angle).id("sensor-angle");
         let mut ripple_field = field(p, "Ripple Control", "Smooth cursor jitter at high DPIs", ripple).id("sensor-ripple");
-        if let Some(sensor) = sensor.filter(|_| self.demo || self.experimental_write) {
+        if let Some(sensor) = sensor.filter(|_| can_edit) {
             let next_angle = !sensor.angle_snap;
             let next_ripple = !sensor.ripple;
             angle_field = angle_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::AngleSnap(next_angle), cx)));
@@ -1472,8 +1494,8 @@ impl Nibble {
             .child(div().min_w(px(40.0)).text_center().child(debounce))
             .child(div().id("debounce-up").rounded(px(6.0)).bg(rgb(p.inset)).px(px(10.0)).py(px(6.0)).child("+")
                 .on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.debounce = power.debounce.saturating_add(1).min(30); this.update_power(power, cx); } })));
-        if !(self.demo || self.experimental_write) || power.is_none() { debounce_control = debounce_control.text_color(rgb(p.muted)); }
-        let mouse = card(p).flex_1().child(heading("Mouse Settings"))
+        if !can_edit || power.is_none() { debounce_control = debounce_control.text_color(rgb(p.muted)); }
+        let mouse = card(p).flex_1().child(heading(if saved.is_some() { "Mouse Settings (saved profile)" } else { "Mouse Settings" }))
             .child(lod_field).child(angle_field).child(ripple_field)
             .child(div().flex().justify_between().items_center().min_h(px(74.0))
                 .child(div().flex().flex_col().child("Debounce Time").child(muted(p, "ms · higher reduces double-clicks")))
@@ -1486,7 +1508,7 @@ impl Nibble {
         let mut sleep_field = field(p, "Sleep after", "Inactivity timeout", sleep_label).id("power-sleep");
         let mut wake_field = field(p, "Move wake-up", "", wake).id("power-wake");
         let mut light_field = field(p, "Move to turn off light", "", off_light).id("power-move-light");
-        if power.is_some() && (self.demo || self.experimental_write) {
+        if power.is_some() && can_edit {
             sleep_field = sleep_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
                 this.show_sleep_options = !this.show_sleep_options;
                 cx.notify();
@@ -1510,7 +1532,7 @@ impl Nibble {
                 .child(muted(p, "UI only")))
             .child(mode_options);
         let mut sleep_options = div().flex().flex_col().gap(px(6.0));
-        if self.show_sleep_options && power.is_some() && (self.demo || self.experimental_write) {
+        if self.show_sleep_options && power.is_some() && can_edit {
             for row in [[(1, "10 sec"), (3, "30 sec"), (6, "1 min"), (12, "2 min")],
                         [(30, "5 min"), (60, "10 min"), (120, "20 min"), (180, "30 min")]] {
                 let mut line = div().flex().gap(px(6.0));
@@ -1531,7 +1553,7 @@ impl Nibble {
                 sleep_options = sleep_options.child(line);
             }
         }
-        let power = card(p).flex_1().child(heading("Power & Sleep"))
+        let power = card(p).flex_1().child(heading(if saved.is_some() { "Power & Sleep (saved profile)" } else { "Power & Sleep" }))
             .child(sleep_field).child(sleep_options).child(wake_field).child(light_field)
             .child(mode_field);
         let device_name = self.readout.as_ref().map(|data| {

@@ -65,7 +65,12 @@ impl Profiles {
             speed: u8::try_from(light["speed"].as_u64()?).ok()?,
             color: None,
         }));
-        Readout { dpi, active_dpi, dpi_count, rate, lighting, ..Default::default() }
+        let settings = &profile["settings"];
+        let lod = match settings["lod"].as_str() { Some("low") => Some(1), Some("high") => Some(2), _ => None };
+        let sensor = lod.and_then(|lod| Some(device::Sensor {
+            lod, angle_snap: settings["angleSnap"].as_bool()?, ripple: settings["ripple"].as_bool()?,
+        }));
+        Readout { dpi, active_dpi, dpi_count, rate, lighting, sensor, ..Default::default() }
     }
 
     pub fn names(&self) -> Vec<&str> {
@@ -360,6 +365,8 @@ mod tests {
         assert_eq!(saved.active_dpi, Some(2));
         assert_eq!(saved.dpi[2], 1500);
         assert_eq!(saved.rate, Some(500));
+        assert_eq!(saved.sensor.as_ref().map(|sensor| sensor.lod), Some(1));
+        assert_eq!(saved.sensor.as_ref().map(|sensor| sensor.angle_snap), Some(false));
         assert!(saved.battery.is_none());
         assert!(!saved.model_confirmed);
     }

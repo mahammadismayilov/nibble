@@ -116,5 +116,15 @@ try {
         $offlineShot = Capture-ProfileWindow 'profile-offline-dpi-edited'
         $offlineShot.Dispose()
         Write-Output 'Offline DPI stage, value, count, and report rate were saved without changing unrelated profile values.'
+        Click-Point 420 119
+        Click-Point 460 230
+        Click-Point 470 303
+        Click-Point 480 452
+        Click-Point 970 304
+        $edited = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+        if ($edited.profiles[0].settings.lod -ne 'high' -or -not $edited.profiles[0].settings.angleSnap) { throw 'Offline sensor settings were not saved.' }
+        if ($edited.profiles[0].settings.debounce -ne 5 -or $edited.profiles[0].settings.moveWake -ne $false) { throw 'Offline power settings were not saved.' }
+        if ($edited.profiles[0].dpiStages[2].value -ne 1400) { throw 'Offline settings editing changed an unrelated DPI value.' }
+        Write-Output 'Offline sensor and power settings were saved without changing DPI.'
     } finally { if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force } }
 } finally { $env:LOCALAPPDATA = $originalLocalAppData }
