@@ -64,6 +64,7 @@ pub struct Nibble {
     profiles: Profiles,
     profiles_writable: bool,
     show_profiles: bool,
+    show_sleep_options: bool,
     mouse: Arc<Image>,
     logo: Arc<Image>,
 }
@@ -125,6 +126,7 @@ impl Nibble {
             profiles,
             profiles_writable,
             show_profiles: false,
+            show_sleep_options: false,
             mouse: Arc::new(Image::from_bytes(
                 ImageFormat::Png,
                 include_bytes!("../../../webapp/assets/device/mouse_aj179.png").to_vec(),
@@ -888,7 +890,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; this.show_sleep_options = false; cx.notify();
                     })),
             );
         }
@@ -1246,11 +1248,8 @@ impl Nibble {
         let mut light_field = field(p, "Move to turn off light", "", off_light).id("power-move-light");
         if power.is_some() && (self.demo || self.experimental_write) {
             sleep_field = sleep_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
-                if let Some(mut power) = this.profiles.power() {
-                    let options = [1, 3, 6, 12, 30, 60, 120, 180];
-                    let index = options.iter().position(|value| *value == power.sleep_wire).unwrap_or(0);
-                    power.sleep_wire = options[(index + 1) % options.len()]; this.update_power(power, cx);
-                }
+                this.show_sleep_options = !this.show_sleep_options;
+                cx.notify();
             }));
             wake_field = wake_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.move_wake = !power.move_wake; this.update_power(power, cx); } }));
             light_field = light_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.move_close_light = !power.move_close_light; this.update_power(power, cx); } }));
@@ -1270,8 +1269,30 @@ impl Nibble {
             .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Connection mode (display)"))
                 .child(muted(p, "UI only")))
             .child(mode_options);
+        let mut sleep_options = div().flex().flex_col().gap(px(6.0));
+        if self.show_sleep_options && power.is_some() && (self.demo || self.experimental_write) {
+            for row in [[(1, "10 sec"), (3, "30 sec"), (6, "1 min"), (12, "2 min")],
+                        [(30, "5 min"), (60, "10 min"), (120, "20 min"), (180, "30 min")]] {
+                let mut line = div().flex().gap(px(6.0));
+                for (value, label) in row {
+                    let selected = power.as_ref().is_some_and(|power| power.sleep_wire == value);
+                    line = line.child(div().id(("sleep-option", value as usize)).flex_1().cursor_pointer().text_center()
+                        .rounded(px(6.0)).px(px(4.0)).py(px(8.0))
+                        .bg(rgb(if selected { p.accent_soft } else { p.inset }))
+                        .text_color(rgb(if selected { p.accent } else { p.text })).child(label)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.show_sleep_options = false;
+                            if let Some(mut power) = this.profiles.power() {
+                                if power.sleep_wire != value { power.sleep_wire = value; this.update_power(power, cx); }
+                            }
+                            cx.notify();
+                        })));
+                }
+                sleep_options = sleep_options.child(line);
+            }
+        }
         let power = card(p).flex_1().child(heading("Power & Sleep"))
-            .child(sleep_field).child(wake_field).child(light_field)
+            .child(sleep_field).child(sleep_options).child(wake_field).child(light_field)
             .child(mode_field);
         let system = card(p).mt(px(12.0)).child(heading("System"))
             .child(div().flex().gap(px(10.0)).mt(px(10.0))

@@ -128,6 +128,53 @@ foreach ($tab in $tabs) {
                         if ($changed -lt 100) { throw "The $($area[0]) selection did not visibly change ($changed pixels)." }
                         Write-Output "Demo $($area[0]) selection changed $changed pixels."
                     }
+                    if (-not [CaptureWindow]::SetCursorPos($rect.Left + 960, $rect.Top + 230)) { throw 'Could not position the pointer for the sleep menu.' }
+                    [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                    [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                    Start-Sleep -Seconds 1
+                    $menuBitmap = [System.Drawing.Bitmap]::new($width, $height)
+                    $menuGraphics = [System.Drawing.Graphics]::FromImage($menuBitmap)
+                    try {
+                        $menuDc = $menuGraphics.GetHdc()
+                        try { $menuPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $menuDc, 2) }
+                        finally { $menuGraphics.ReleaseHdc($menuDc) }
+                        if (-not $menuPrinted) { throw 'Could not capture the sleep options.' }
+                        $menuBitmap.Save((Join-Path $output 'settings-light-sleep-options.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                        $menuChanged = 0
+                        for ($y = 270; $y -lt 300; $y++) {
+                            for ($x = 550; $x -lt 640; $x++) {
+                                if ($afterSettings.GetPixel($x, $y).ToArgb() -ne $menuBitmap.GetPixel($x, $y).ToArgb()) { $menuChanged++ }
+                            }
+                        }
+                        if ($menuChanged -lt 100) { throw 'The sleep options did not open.' }
+                    } finally {
+                        $menuGraphics.Dispose()
+                        $menuBitmap.Dispose()
+                    }
+                    if (-not [CaptureWindow]::SetCursorPos($rect.Left + 590, $rect.Top + 280)) { throw 'Could not position the pointer for the sleep option.' }
+                    [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                    [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                    Start-Sleep -Seconds 1
+                    $sleepBitmap = [System.Drawing.Bitmap]::new($width, $height)
+                    $sleepGraphics = [System.Drawing.Graphics]::FromImage($sleepBitmap)
+                    try {
+                        $sleepDc = $sleepGraphics.GetHdc()
+                        try { $sleepPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $sleepDc, 2) }
+                        finally { $sleepGraphics.ReleaseHdc($sleepDc) }
+                        if (-not $sleepPrinted) { throw 'Could not capture the selected sleep option.' }
+                        $sleepBitmap.Save((Join-Path $output 'settings-light-sleep-selected.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                        $labelChanged = 0
+                        for ($y = 210; $y -lt 250; $y++) {
+                            for ($x = 915; $x -lt 993; $x++) {
+                                if ($afterSettings.GetPixel($x, $y).ToArgb() -ne $sleepBitmap.GetPixel($x, $y).ToArgb()) { $labelChanged++ }
+                            }
+                        }
+                        if ($labelChanged -lt 20) { throw 'Selecting a sleep timeout did not change its displayed value.' }
+                        Write-Output "Demo sleep selection changed $labelChanged pixels in the value."
+                    } finally {
+                        $sleepGraphics.Dispose()
+                        $sleepBitmap.Dispose()
+                    }
                 } finally {
                     $afterSettingsGraphics.Dispose()
                     $afterSettings.Dispose()
