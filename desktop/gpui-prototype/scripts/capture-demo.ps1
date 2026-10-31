@@ -162,6 +162,23 @@ foreach ($tab in $tabs) {
                         Write-Output "Demo profile selection changed $headerChanges header pixels."
                     } finally { $selectedGraphics.Dispose(); $selected.Dispose() }
                 } finally { $menuGraphics.Dispose(); $menu.Dispose() }
+                if (-not [CaptureWindow]::SetCursorPos($rect.Left + 420, $rect.Top + 119)) { throw 'Could not position the pointer for Settings.' }
+                [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep -Seconds 1
+                [void][CaptureWindow]::SetCursorPos($rect.Left + 800, $rect.Top + 550)
+                $wheelDown = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]-1200), 0)
+                [CaptureWindow]::mouse_event(0x0800, 0, 0, $wheelDown, [UIntPtr]::Zero)
+                Start-Sleep -Seconds 1
+                $settingsBottom = [System.Drawing.Bitmap]::new($width, $height)
+                $settingsGraphics = [System.Drawing.Graphics]::FromImage($settingsBottom)
+                try {
+                    $settingsDc = $settingsGraphics.GetHdc()
+                    try { $settingsPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $settingsDc, 2) }
+                    finally { $settingsGraphics.ReleaseHdc($settingsDc) }
+                    if (-not $settingsPrinted) { throw 'Could not capture the profile reset control.' }
+                    $settingsBottom.Save((Join-Path $output 'settings-light-profile-reset.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                } finally { $settingsGraphics.Dispose(); $settingsBottom.Dispose() }
             }
             if ($tab -eq 'dpi-light' -and $width -eq 1040 -and $height -eq 711) {
                 $before = $bitmap.GetPixel(230, 450).ToArgb()

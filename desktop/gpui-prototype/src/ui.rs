@@ -83,6 +83,7 @@ pub struct Nibble {
     confirm_reset_keys: bool,
     confirm_reset_lighting: bool,
     confirm_reset_dpi: bool,
+    confirm_reset_profiles: bool,
     content_scroll: ScrollHandle,
     profiles: Profiles,
     profiles_writable: bool,
@@ -158,6 +159,7 @@ impl Nibble {
             confirm_reset_keys: false,
             confirm_reset_lighting: false,
             confirm_reset_dpi: false,
+            confirm_reset_profiles: false,
             content_scroll: ScrollHandle::new(),
             profiles,
             profiles_writable,
@@ -324,6 +326,22 @@ impl Nibble {
         if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
         else { self.message = Some("Profile selected locally. Mouse settings were not changed.".into()); }
         self.show_profiles = false;
+        cx.notify();
+    }
+
+    fn reset_profiles(&mut self, cx: &mut Context<Self>) {
+        if !self.confirm_reset_profiles || self.scanning || self.applying || !self.profiles_writable { return; }
+        self.confirm_reset_profiles = false;
+        let previous = self.profiles.clone();
+        self.profiles = Profiles::new();
+        if let Err(error) = self.save_profiles() {
+            self.profiles = previous;
+            self.message = Some(error);
+        } else {
+            self.show_profiles = false;
+            self.pending_left_key = None;
+            self.message = Some("Saved profiles reset. Mouse settings were not changed.".into());
+        }
         cx.notify();
     }
 
@@ -1017,7 +1035,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.pending_left_key = None; this.confirm_reset_keys = false; this.confirm_reset_lighting = false; this.confirm_reset_dpi = false; this.show_sleep_options = false; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.pending_left_key = None; this.confirm_reset_keys = false; this.confirm_reset_lighting = false; this.confirm_reset_dpi = false; this.confirm_reset_profiles = false; this.show_sleep_options = false; cx.notify();
                     })),
             );
         }
@@ -1500,7 +1518,18 @@ impl Nibble {
                         .on_click(cx.listener(|this, _, _, cx| this.export_profile(cx))))
                     .child(div().id("profile-import").cursor_pointer().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0)).child("Import")
                         .on_click(cx.listener(|this, _, _, cx| this.import_profile(cx))))))
-            .child(muted(p, "Restore factory settings"));
+            .child(div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
+                .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Reset saved profiles"))
+                    .child(muted(p, "Deletes saved profiles. Mouse settings stay unchanged.")))
+                .child(div().flex().gap(px(8.0))
+                    .when(self.confirm_reset_profiles, |row| row.child(div().id("cancel-reset-profiles").cursor_pointer().rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0)).child("Cancel")
+                        .on_click(cx.listener(|this, _, _, cx| { this.confirm_reset_profiles = false; cx.notify(); }))))
+                    .child(div().id("reset-profiles").rounded(px(8.0)).bg(rgb(p.inset)).px(px(12.0)).py(px(8.0))
+                        .text_color(rgb(if self.profiles_writable && !self.scanning && !self.applying { p.text } else { p.muted }))
+                        .child(if self.confirm_reset_profiles { "Confirm reset" } else { "Reset profiles" })
+                        .when(self.profiles_writable && !self.scanning && !self.applying, |button| button.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
+                            if this.confirm_reset_profiles { this.reset_profiles(cx); } else { this.confirm_reset_profiles = true; cx.notify(); }
+                        }))))));
         let experimental = card(p).mt(px(12.0)).child(heading("Experimental Features"))
             .child(muted(p, "Software-level unlocks that bypass OEM app limitations."))
             .child(field(p, "50-Step DPI Granularity", "Unlock 50-step increments (default is 100)", if fine_dpi { "On" } else { "Off" }).id("local-fine-dpi").cursor_pointer()
@@ -1525,7 +1554,7 @@ impl Nibble {
                 .child(info_tile(p, "Method", "Static analysis + USB captures")));
         let capabilities = card(p).mt(px(16.0)).child(heading("What works"))
             .child(muted(p, if self.experimental_write {
-                "Experimental controls can change DPI levels, the active stage, report rate, and sensor settings. Other settings are previews."
+                "Experimental controls can change DPI, report rate, supported buttons, lighting, sensor, and power settings. Some controls remain previews."
             } else {
                 "This GPUI preview reads battery, DPI stages, and polling rate. Mouse settings cannot be changed."
             }));
@@ -1552,7 +1581,7 @@ impl Render for Nibble {
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
             else if let Some(message) = &self.message { message.clone() }
             else if self.experimental_write && self.readout.as_ref().is_some_and(|data| !data.model_confirmed) { "Mouse model is unconfirmed. Settings cannot be sent; refresh to retry.".into() }
-            else if self.experimental_write { "Experimental mode · DPI, report rate, and sensor controls can change the receiver. Close other mouse software.".into() }
+            else if self.experimental_write { "Experimental mode · Supported controls can change mouse settings. Close other mouse software.".into() }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
         let background_alpha = match self.background { BackgroundStyle::Solid => 0xff, BackgroundStyle::Frosted => 0xb8, BackgroundStyle::Clear => 0xa0 };
         div().size_full().bg(rgba((p.bg << 8) | background_alpha)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
