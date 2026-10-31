@@ -70,6 +70,7 @@ foreach ($tab in $tabs) {
             Write-Output "$tab capture: ${width}x${height}, $($colors.Count) sampled colors"
             if ($tab -eq 'dpi-light' -and $width -eq 1040 -and $height -eq 711) {
                 $before = $bitmap.GetPixel(230, 450).ToArgb()
+                $beforeGap = $bitmap.GetPixel(720, 220).ToArgb()
                 if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the GPUI demo for the stage-selection check.' }
                 if (-not [CaptureWindow]::SetCursorPos($rect.Left + 300, $rect.Top + 455)) { throw 'Could not position the pointer for the stage-selection check.' }
                 [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
@@ -84,6 +85,7 @@ foreach ($tab in $tabs) {
                     if (-not $afterPrinted) { throw 'Could not capture the GPUI demo after selecting stage 2.' }
                     $afterBitmap.Save((Join-Path $output 'dpi-light-stage2.png'), [System.Drawing.Imaging.ImageFormat]::Png)
                     if ($afterBitmap.GetPixel(230, 450).ToArgb() -eq $before) { throw 'Selecting stage 2 did not change its highlighted background.' }
+                    if ($afterBitmap.GetPixel(720, 220).ToArgb() -ne $beforeGap) { throw 'Selecting stage 2 shifted the report-rate card.' }
                     Write-Output 'Demo stage-selection check: stage 2 highlight changed.'
                 } finally {
                     $afterGraphics.Dispose()
@@ -100,4 +102,3 @@ foreach ($tab in $tabs) {
         if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
     }
 }
-

@@ -1057,7 +1057,7 @@ impl Nibble {
             apply_colors = apply_colors.cursor_pointer().bg(rgb(p.inset)).text_color(rgb(p.text))
                 .on_click(cx.listener(|this, _, _, cx| this.apply_profile_colors(cx)));
         }
-        let hero = card(p).flex_1().h(px(520.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
+        let hero = card(p).flex_1().min_w(px(0.0)).h(px(520.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
             .child(div().flex().items_center().justify_between()
                 .child(div().flex().items_center().gap(px(20.0)).child(heading("DPI Sensitivity")).child(levels))
                 .child(div().flex().items_center().gap(px(8.0)).child(apply_colors).child(muted(p, "Reset DPI"))))
@@ -1434,5 +1434,4 @@ mod dpi_track_tests {
         assert_eq!(next_reported_speed(10, true), 10);
     }
 }
-
 
