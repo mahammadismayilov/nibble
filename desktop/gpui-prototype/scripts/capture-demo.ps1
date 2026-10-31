@@ -101,6 +101,38 @@ foreach ($tab in $tabs) {
             } elseif ($tab -eq 'dpi-light') {
                 throw "Stage-selection check requires the expected 1040x711 runner window, got ${width}x${height}."
             }
+            if ($tab -eq 'settings-light') {
+                if ($width -ne 1040 -or $height -ne 711) { throw "Settings interaction check requires a 1040x711 window, got ${width}x${height}." }
+                if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the settings demo.' }
+                foreach ($position in @(@(466, 230), @(966, 452))) {
+                    if (-not [CaptureWindow]::SetCursorPos($rect.Left + $position[0], $rect.Top + $position[1])) { throw 'Could not position the pointer for the settings check.' }
+                    [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                    [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                    Start-Sleep -Seconds 1
+                }
+                $afterSettings = [System.Drawing.Bitmap]::new($width, $height)
+                $afterSettingsGraphics = [System.Drawing.Graphics]::FromImage($afterSettings)
+                try {
+                    $settingsDc = $afterSettingsGraphics.GetHdc()
+                    try { $settingsPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $settingsDc, 2) }
+                    finally { $afterSettingsGraphics.ReleaseHdc($settingsDc) }
+                    if (-not $settingsPrinted) { throw 'Could not capture the settings after selecting options.' }
+                    $afterSettings.Save((Join-Path $output 'settings-light-selected.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                    foreach ($area in @(@('LOD', 440, 210, 494, 249), @('connection', 940, 432, 992, 471))) {
+                        $changed = 0
+                        for ($y = $area[2]; $y -lt $area[4]; $y++) {
+                            for ($x = $area[1]; $x -lt $area[3]; $x++) {
+                                if ($bitmap.GetPixel($x, $y).ToArgb() -ne $afterSettings.GetPixel($x, $y).ToArgb()) { $changed++ }
+                            }
+                        }
+                        if ($changed -lt 100) { throw "The $($area[0]) selection did not visibly change ($changed pixels)." }
+                        Write-Output "Demo $($area[0]) selection changed $changed pixels."
+                    }
+                } finally {
+                    $afterSettingsGraphics.Dispose()
+                    $afterSettings.Dispose()
+                }
+            }
         } finally {
             $graphics.Dispose()
             $bitmap.Dispose()

@@ -1198,17 +1198,28 @@ impl Nibble {
         let mode_24g = local["mode"].as_str() == Some("24g");
         let sensor = self.readout.as_ref().and_then(|data| data.sensor.as_ref());
         let power = self.profiles.power();
-        let lod = match sensor.map(|s| s.lod) { Some(1) => "1mm", Some(2) => "2mm", _ => "—" };
         let angle = sensor.map(|s| if s.angle_snap { "On" } else { "Off" }).unwrap_or("—");
         let ripple = sensor.map(|s| if s.ripple { "On" } else { "Off" }).unwrap_or("—");
-        let mut lod_field = field(p, "Lift Off Distance (LOD)", "1mm or 2mm", lod).id("sensor-lod");
+        let mut lod_options = div().flex().rounded(px(8.0)).bg(rgb(p.inset)).p(px(4.0));
+        for (value, label) in [(1, "1mm"), (2, "2mm")] {
+            let selected = sensor.is_some_and(|sensor| sensor.lod == value);
+            let mut option = div().id(("sensor-lod", value as usize)).rounded(px(6.0)).px(px(12.0)).py(px(8.0))
+                .bg(rgb(if selected { p.accent_soft } else { p.inset }))
+                .text_color(rgb(if selected { p.accent } else { p.text })).child(label);
+            if sensor.is_some() && (self.demo || self.experimental_write) && !selected {
+                option = option.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::Lod(value), cx)));
+            }
+            lod_options = lod_options.child(option);
+        }
+        let lod_field = div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
+            .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Lift Off Distance (LOD)"))
+                .child(muted(p, "1mm or 2mm")))
+            .child(lod_options);
         let mut angle_field = field(p, "Angle Snap", "Straighten out slight angle offsets", angle).id("sensor-angle");
         let mut ripple_field = field(p, "Ripple Control", "Smooth cursor jitter at high DPIs", ripple).id("sensor-ripple");
         if let Some(sensor) = sensor.filter(|_| self.demo || self.experimental_write) {
-            let next_lod = if sensor.lod == 1 { 2 } else { 1 };
             let next_angle = !sensor.angle_snap;
             let next_ripple = !sensor.ripple;
-            lod_field = lod_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::Lod(next_lod), cx)));
             angle_field = angle_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::AngleSnap(next_angle), cx)));
             ripple_field = ripple_field.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_sensor(SensorChange::Ripple(next_ripple), cx)));
         }
@@ -1244,10 +1255,24 @@ impl Nibble {
             wake_field = wake_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.move_wake = !power.move_wake; this.update_power(power, cx); } }));
             light_field = light_field.cursor_pointer().on_click(cx.listener(|this, _, _, cx| { if let Some(mut power) = this.profiles.power() { power.move_close_light = !power.move_close_light; this.update_power(power, cx); } }));
         }
+        let mut mode_options = div().flex().rounded(px(8.0)).bg(rgb(p.inset)).p(px(4.0));
+        for (index, (value, label)) in [("usb", "USB"), ("24g", "2.4G")].into_iter().enumerate() {
+            let selected = (value == "24g") == mode_24g;
+            let mut option = div().id(("local-mode", index)).rounded(px(6.0)).px(px(12.0)).py(px(8.0))
+                .bg(rgb(if selected { p.accent_soft } else { p.inset }))
+                .text_color(rgb(if selected { p.accent } else { p.text })).child(label);
+            if !selected {
+                option = option.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_local_setting("mode", serde_json::json!(value), cx)));
+            }
+            mode_options = mode_options.child(option);
+        }
+        let mode_field = div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
+            .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Connection mode (display)"))
+                .child(muted(p, "UI only")))
+            .child(mode_options);
         let power = card(p).flex_1().child(heading("Power & Sleep"))
             .child(sleep_field).child(wake_field).child(light_field)
-            .child(field(p, "Connection mode (display)", "UI only", if mode_24g { "2.4G" } else { "USB" }).id("local-mode").cursor_pointer()
-                .on_click(cx.listener(move |this, _, _, cx| this.update_local_setting("mode", serde_json::json!(if mode_24g { "usb" } else { "24g" }), cx))));
+            .child(mode_field);
         let system = card(p).mt(px(12.0)).child(heading("System"))
             .child(div().flex().gap(px(10.0)).mt(px(10.0))
                 .child(info_tile(p, "App", "Nibble 1.0.6"))
@@ -1263,7 +1288,7 @@ impl Nibble {
                     .child(div().id("theme-dark").cursor_pointer().rounded(px(6.0)).px(px(12.0)).py(px(8.0))
                         .bg(rgb(if self.dark { p.hover } else { p.inset })).child("Dark")
                         .on_click(cx.listener(|this, _, _, cx| this.set_theme(true, cx))))))
-            .child(field(p, "Left-click lock", "Prevents accidental rebinding of LMB", "—"))
+            .child(field(p, "Left-click lock", "Prevents accidental rebinding of LMB", "On"))
             .child(div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
                 .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Profile backup"))
                     .child(muted(p, "Save or load this profile as a JSON file")))
