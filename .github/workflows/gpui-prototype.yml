@@ -61,6 +61,9 @@ jobs:
       - name: Check left-click lock and confirmation in demo
         shell: pwsh
         run: ./desktop/gpui-prototype/scripts/check-left-click-demo.ps1
+      - name: Check saved-profile reset persistence
+        shell: pwsh
+        run: ./desktop/gpui-prototype/scripts/check-profile-reset.ps1
       - name: Upload visual captures and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
