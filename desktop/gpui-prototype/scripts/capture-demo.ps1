@@ -171,6 +171,30 @@ foreach ($tab in $tabs) {
                         }
                         if ($labelChanged -lt 20) { throw 'Selecting a sleep timeout did not change its displayed value.' }
                         Write-Output "Demo sleep selection changed $labelChanged pixels in the value."
+                        if (-not [CaptureWindow]::SetCursorPos($rect.Left + 800, $rect.Top + 550)) { throw 'Could not position the pointer for scrolling.' }
+                        $wheelDown = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]-480), 0)
+                        [CaptureWindow]::mouse_event(0x0800, 0, 0, $wheelDown, [UIntPtr]::Zero)
+                        Start-Sleep -Seconds 1
+                        $scrolledBitmap = [System.Drawing.Bitmap]::new($width, $height)
+                        $scrolledGraphics = [System.Drawing.Graphics]::FromImage($scrolledBitmap)
+                        try {
+                            $scrolledDc = $scrolledGraphics.GetHdc()
+                            try { $scrolledPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $scrolledDc, 2) }
+                            finally { $scrolledGraphics.ReleaseHdc($scrolledDc) }
+                            if (-not $scrolledPrinted) { throw 'Could not capture the scrolled settings.' }
+                            $scrolledBitmap.Save((Join-Path $output 'settings-light-scrolled.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                            $scrollChanged = 0
+                            for ($y = 150; $y -lt 600; $y += 5) {
+                                for ($x = 40; $x -lt 500; $x += 5) {
+                                    if ($sleepBitmap.GetPixel($x, $y).ToArgb() -ne $scrolledBitmap.GetPixel($x, $y).ToArgb()) { $scrollChanged++ }
+                                }
+                            }
+                            if ($scrollChanged -lt 100) { throw 'The settings page did not visibly scroll.' }
+                            Write-Output "Settings scrolling changed $scrollChanged sampled pixels."
+                        } finally {
+                            $scrolledGraphics.Dispose()
+                            $scrolledBitmap.Dispose()
+                        }
                     } finally {
                         $sleepGraphics.Dispose()
                         $sleepBitmap.Dispose()

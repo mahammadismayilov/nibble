@@ -1294,11 +1294,16 @@ impl Nibble {
         let power = card(p).flex_1().child(heading("Power & Sleep"))
             .child(sleep_field).child(sleep_options).child(wake_field).child(light_field)
             .child(mode_field);
+        let device_name = self.readout.as_ref().map(|data| {
+            if data.model_confirmed { "AJAZZ AJ179 / AJ179P" } else { "AJ179 / AJ179P (unconfirmed)" }
+        }).unwrap_or("— not connected —");
+        let usb_id = self.readout.as_ref().map(|data| format!("{:04X}:{:04X}", data.vid, data.pid))
+            .unwrap_or_else(|| "—".to_string());
         let system = card(p).mt(px(12.0)).child(heading("System"))
             .child(div().flex().gap(px(10.0)).mt(px(10.0))
                 .child(info_tile(p, "App", "Nibble 1.0.6"))
-                .child(info_tile(p, "Device", "—"))
-                .child(info_tile(p, "USB ID", "—")))
+                .child(info_tile(p, "Device", device_name))
+                .child(info_tile_text(p, "USB ID", usb_id)))
             .child(div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
                 .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Appearance"))
                     .child(muted(p, "Light or dark interface theme")))
@@ -1427,6 +1432,10 @@ fn field(p: Palette, title: &'static str, subtitle: &'static str, value: &'stati
 }
 
 fn info_tile(p: Palette, label: &'static str, value: &'static str) -> Div {
+    info_tile_text(p, label, value.to_string())
+}
+
+fn info_tile_text(p: Palette, label: &'static str, value: String) -> Div {
     div().flex_1().min_h(px(100.0)).rounded(px(10.0)).bg(rgb(p.inset)).p(px(14.0)).flex().flex_col().gap(px(6.0))
         .child(div().text_size(px(11.0)).text_color(rgb(p.muted)).child(label))
         .child(div().font_weight(FontWeight::SEMIBOLD).child(value))
