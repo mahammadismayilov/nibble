@@ -133,6 +133,15 @@ pub fn set_dpi_value(snapshot: &Readout, index: usize, value: u16) -> Result<(us
     set_dpi(snapshot, DpiChange::Value(index, value))
 }
 
+pub fn reset_dpi(snapshot: &Readout) -> Result<(usize, usize, Vec<u16>, Option<Lighting>), String> {
+    set_rate(snapshot, 1000).map_err(|error| format!("DPI reset stopped while setting the report rate: {error}"))?;
+    let (active, count, stages) = set_dpi(snapshot, DpiChange::Reset)
+        .map_err(|error| format!("Report rate was set; DPI reset did not complete: {error}"))?;
+    let light = set_dpi_colors(snapshot, crate::profile::DEFAULT_DPI_COLORS)
+        .map_err(|error| format!("DPI and report rate were set; color reset did not complete: {error}"))?;
+    Ok((active, count, stages, light))
+}
+
 // The receiver does not expose a reliable readback for its complete color table.
 // The caller supplies all six profile colors and reports the table as sent only.
 pub fn set_dpi_colors(snapshot: &Readout, colors: [[u8; 3]; 6]) -> Result<Option<Lighting>, String> {
@@ -167,7 +176,7 @@ fn dpi_color_packet(colors: &[[u8; 3]; 6]) -> [u8; 33] {
     packet
 }
 
-enum DpiChange { Active(usize), Count(usize), Value(usize, u16) }
+enum DpiChange { Active(usize), Count(usize), Value(usize, u16), Reset }
 
 fn apply_dpi_change(current: usize, current_count: usize, mut stages: Vec<u16>, change: DpiChange) -> Result<(usize, usize, Vec<u16>), String> {
     if stages.len() != 6 || !(1..=6).contains(&current_count) || current >= current_count {
@@ -183,6 +192,7 @@ fn apply_dpi_change(current: usize, current_count: usize, mut stages: Vec<u16>, 
             (current, current_count)
         }
         DpiChange::Value(_, _) => return Err("Unsupported DPI value. No settings were sent.".into()),
+        DpiChange::Reset => { stages = crate::profile::DEFAULT_DPI.to_vec(); (1.min(current_count - 1), current_count) },
     };
     Ok((active, count, stages))
 }
@@ -731,6 +741,17 @@ mod tests {
         assert_eq!(light.color, Some([1, 2, 3]));
         light.color = None;
         assert!(light_packet(&light).is_err());
+    }
+
+    #[test]
+    fn dpi_reset_preserves_stage_count_and_selects_valid_default() {
+        let (active, count, stages) = apply_dpi_change(0, 1, vec![500; 6], DpiChange::Reset).unwrap();
+        assert_eq!((active, count), (0, 1));
+        assert_eq!(stages, crate::profile::DEFAULT_DPI);
+        let packet = dpi_packet(&stages, active, count).unwrap();
+        assert_eq!(packet[5], 1);
+        let (active, count, _) = apply_dpi_change(4, 6, vec![1000; 6], DpiChange::Reset).unwrap();
+        assert_eq!((active, count), (1, 6));
     }
 
     #[test]

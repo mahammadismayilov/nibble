@@ -67,6 +67,7 @@ jobs:
           if-no-files-found: warn
 
   performance-windows:
+    if: github.event_name == 'workflow_dispatch'
     needs: build-windows
     runs-on: windows-latest
     steps:

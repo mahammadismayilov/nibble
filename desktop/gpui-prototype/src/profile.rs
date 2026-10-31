@@ -3,7 +3,8 @@ use serde_json::{Value, json};
 use std::{fs, io::{self, Write}, path::{Path, PathBuf}};
 
 const DEFAULT_COLORS: [&str; 6] = ["#FF0000", "#00FF00", "#0000FF", "#00FFFF", "#FFFF00", "#800080"];
-const DEFAULT_DPI: [u16; 6] = [400, 800, 1200, 1600, 2400, 3200];
+pub(crate) const DEFAULT_DPI: [u16; 6] = [400, 800, 1200, 1600, 2400, 3200];
+pub(crate) const DEFAULT_DPI_COLORS: [[u8; 3]; 6] = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [0, 255, 255], [255, 255, 0], [128, 0, 128]];
 
 pub fn default_profile() -> Value {
     let stages: Vec<_> = DEFAULT_DPI.into_iter().zip(DEFAULT_COLORS).map(|(value, color)| json!({"value":value,"color":color})).collect();
@@ -75,6 +76,20 @@ impl Profiles {
         }
         let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
         self.document["profiles"][index]["dpiStages"][stage]["color"] = json!(color.to_ascii_uppercase());
+        Ok(())
+    }
+
+    pub fn reset_dpi_defaults(&mut self, active: usize, count: usize) -> Result<(), String> {
+        if !(1..=6).contains(&count) || active >= count { return Err("Invalid DPI reset state".into()); }
+        let index = self.document["profileIndex"].as_u64().unwrap_or(0) as usize;
+        let mut updated = self.document["profiles"][index].clone();
+        let defaults = default_profile();
+        updated["dpiStages"] = defaults["dpiStages"].clone();
+        updated["activeDpi"] = json!(active);
+        updated["dpiStageCount"] = json!(count);
+        updated["reportRateIndex"] = json!(3);
+        validate_profile(&updated)?;
+        self.document["profiles"][index] = updated;
         Ok(())
     }
 
@@ -372,6 +387,23 @@ mod tests {
         assert_eq!(profiles.current()["light"]["speed"], 6);
         assert_eq!(profiles.current()["light"]["color"], before["light"]["color"]);
         assert_eq!(profiles.current()["dpiStages"], before["dpiStages"]);
+    }
+
+    #[test]
+    fn dpi_reset_updates_only_dpi_and_rate_fields() {
+        let mut profiles = Profiles::new();
+        profiles.set_dpi_color(0, "#123456").unwrap();
+        profiles.set_local_setting("fineDpi", json!(true)).unwrap();
+        let before = profiles.current().clone();
+        assert!(profiles.reset_dpi_defaults(1, 1).is_err());
+        assert_eq!(profiles.current(), &before);
+        profiles.reset_dpi_defaults(0, 1).unwrap();
+        assert_eq!(profiles.current()["dpiStages"], default_profile()["dpiStages"]);
+        assert_eq!(profiles.current()["activeDpi"], 0);
+        assert_eq!(profiles.current()["dpiStageCount"], 1);
+        assert_eq!(profiles.current()["reportRateIndex"], 3);
+        assert_eq!(profiles.current()["settings"], before["settings"]);
+        assert_eq!(profiles.current()["light"], before["light"]);
     }
 
     #[test]

@@ -79,6 +79,7 @@ pub struct Nibble {
     selected_key: usize,
     confirm_reset_keys: bool,
     confirm_reset_lighting: bool,
+    confirm_reset_dpi: bool,
     content_scroll: ScrollHandle,
     profiles: Profiles,
     profiles_writable: bool,
@@ -143,6 +144,7 @@ impl Nibble {
             selected_key: 0,
             confirm_reset_keys: false,
             confirm_reset_lighting: false,
+            confirm_reset_dpi: false,
             content_scroll: ScrollHandle::new(),
             profiles,
             profiles_writable,
@@ -369,6 +371,51 @@ impl Nibble {
         self.color_input = None;
         self.color_stage = None;
         self.update_dpi(count, true, cx);
+    }
+
+    fn reset_dpi(&mut self, cx: &mut Context<Self>) {
+        if self.scanning || self.applying || !self.profiles_writable { return; }
+        let Some(snapshot) = self.readout.clone() else { return; };
+        if self.demo {
+            let count = snapshot.dpi_count.unwrap_or(6).clamp(1, 6);
+            let active = 1.min(count - 1);
+            if let Err(error) = self.profiles.reset_dpi_defaults(active, count) { self.message = Some(error); }
+            else if let Some(data) = &mut self.readout {
+                data.active_dpi = Some(active); data.dpi_count = Some(count);
+                data.dpi = profile::DEFAULT_DPI.to_vec(); data.rate = Some(1000);
+                if let Some(light) = &mut data.lighting { if light.mode != LightMode::Off { light.color = Some(profile::DEFAULT_DPI_COLORS[active]); } }
+            }
+            cx.notify(); return;
+        }
+        if !self.experimental_write { return; }
+        self.applying = true;
+        self.message = Some("Resetting DPI and report rate…".into());
+        let work = cx.background_executor().spawn(async move { device::reset_dpi(&snapshot) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.applying = false;
+                match result {
+                    Ok((active, count, stages, light)) => {
+                        if let Some(data) = &mut view.readout {
+                            data.active_dpi = Some(active); data.dpi_count = Some(count); data.dpi = stages; data.rate = Some(1000);
+                            if let Some(light) = light { data.lighting = Some(light); }
+                        }
+                        let previous = view.profiles.clone();
+                        match view.profiles.reset_dpi_defaults(active, count).and_then(|_| view.save_profiles()) {
+                            Ok(()) => view.message = Some("DPI and report rate confirmed. Default colors sent; color table cannot be read back.".into()),
+                            Err(error) => { view.profiles = previous; view.message = Some(format!("Mouse reset succeeded, but profile could not be saved: {error}")); }
+                        }
+                    }
+                    Err(error) => {
+                        if let Some(data) = &mut view.readout { data.active_dpi = None; data.dpi_count = None; data.dpi.clear(); data.rate = None; data.lighting = None; }
+                        view.message = Some(format!("{error} Refresh before trying again; some settings may have changed."));
+                    }
+                }
+                cx.notify();
+            });
+        }).detach();
+        cx.notify();
     }
 
     fn edit_dpi(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -924,7 +971,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; this.confirm_reset_lighting = false; this.show_sleep_options = false; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; this.confirm_reset_lighting = false; this.confirm_reset_dpi = false; this.show_sleep_options = false; cx.notify();
                     })),
             );
         }
@@ -1093,10 +1140,22 @@ impl Nibble {
             apply_colors = apply_colors.cursor_pointer().bg(rgb(p.inset)).text_color(rgb(p.text))
                 .on_click(cx.listener(|this, _, _, cx| this.apply_profile_colors(cx)));
         }
+        let mut reset_dpi = div().id("reset-dpi").rounded(px(7.0)).px(px(8.0)).py(px(5.0)).text_size(px(11.0))
+            .text_color(rgb(if dpi_editable && rate_editable && self.profiles_writable { p.accent } else { p.muted }))
+            .child(if self.confirm_reset_dpi { "Confirm reset" } else { "Reset DPI" });
+        if dpi_editable && rate_editable && self.profiles_writable {
+            reset_dpi = reset_dpi.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
+                if this.confirm_reset_dpi { this.confirm_reset_dpi = false; this.reset_dpi(cx); }
+                else { this.confirm_reset_dpi = true; cx.notify(); }
+            }));
+        }
+        let reset_actions = div().flex().items_center().gap(px(4.0)).child(reset_dpi)
+            .when(self.confirm_reset_dpi, |row| row.child(div().id("cancel-reset-dpi").cursor_pointer().text_size(px(11.0)).text_color(rgb(p.muted)).child("Cancel")
+                .on_click(cx.listener(|this, _, _, cx| { this.confirm_reset_dpi = false; cx.notify(); }))));
         let hero = card(p).flex_1().min_w(px(0.0)).h(px(560.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
             .child(div().flex().items_center().justify_between()
                 .child(div().flex().items_center().gap(px(20.0)).child(heading("DPI Sensitivity")).child(levels))
-                .child(div().flex().items_center().gap(px(8.0)).child(apply_colors).child(muted(p, "Reset DPI"))))
+                .child(div().flex().items_center().gap(px(8.0)).child(apply_colors).child(reset_actions)))
             .child(chart)
             .child(div().mt(px(12.0)).child(stage_rows))
             .child(div().mt(px(12.0)).child(fine_controls))
