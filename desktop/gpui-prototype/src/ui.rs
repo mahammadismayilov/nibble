@@ -211,6 +211,7 @@ impl Nibble {
             || self.dpi_input.is_some() || self.color_input.is_some() { return; }
         let Some(snapshot) = self.readout.clone() else {
             self.scanning = true;
+            self.message = None;
             Self::scan(cx);
             cx.notify();
             return;
@@ -231,10 +232,12 @@ impl Nibble {
                     }
                     device::StatusPoll::Disconnected => {
                         view.readout = None;
+                        view.message = None;
                         view.error = Some("Receiver disconnected".into());
                     }
                     device::StatusPoll::Unsupported(error) => {
                         view.readout = None;
+                        view.message = None;
                         view.error = Some(error);
                     }
                     device::StatusPoll::Unavailable => {
@@ -1630,12 +1633,12 @@ impl Render for Nibble {
         let notice = if self.dpi_drag.is_some() { "Release to apply the DPI value.".to_string() }
             else if self.color_input.is_some() { "Enter a profile color as #RRGGBB, then press Enter to save or Escape to cancel. This does not change the mouse.".to_string() }
             else if self.dpi_input.is_some() { "Enter a DPI value, then press Enter to apply or Escape to cancel.".to_string() }
-            else if self.connection_paused { "Disconnected · Receiver polling is paused.".to_string() }
             else if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
             else if self.scanning { "Reading the receiver…".to_string() }
-            else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
             else if let Some(warning) = &self.save_warning { warning.clone() }
             else if let Some(message) = &self.message { message.clone() }
+            else if self.connection_paused { "Disconnected · Receiver polling is paused.".to_string() }
+            else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
             else if self.experimental_write && self.readout.as_ref().is_some_and(|data| !data.model_confirmed) { "Mouse model is unconfirmed. Settings cannot be sent; refresh to retry.".into() }
             else if self.experimental_write { "Experimental mode · Supported controls can change mouse settings. Close other mouse software.".into() }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
