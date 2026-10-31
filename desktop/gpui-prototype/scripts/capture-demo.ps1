@@ -115,6 +115,36 @@ foreach ($tab in $tabs) {
             } elseif ($tab -eq 'dpi-light') {
                 throw "Stage-selection check requires the expected 1040x711 runner window, got ${width}x${height}."
             }
+            if ($tab -eq 'lighting-light') {
+                if ($width -ne 1040 -or $height -ne 711) { throw "Lighting reset check requires a 1040x711 window, got ${width}x${height}." }
+                if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the lighting demo.' }
+                foreach ($x in @(950, 850)) {
+                    if (-not [CaptureWindow]::SetCursorPos($rect.Left + $x, $rect.Top + 180)) { throw 'Could not position the pointer for lighting reset.' }
+                    [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                    [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                    Start-Sleep -Seconds 1
+                }
+                $resetBitmap = [System.Drawing.Bitmap]::new($width, $height)
+                $resetGraphics = [System.Drawing.Graphics]::FromImage($resetBitmap)
+                try {
+                    $resetDc = $resetGraphics.GetHdc()
+                    try { $resetPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $resetDc, 2) }
+                    finally { $resetGraphics.ReleaseHdc($resetDc) }
+                    if (-not $resetPrinted) { throw 'Could not capture the lighting reset.' }
+                    $resetBitmap.Save((Join-Path $output 'lighting-light-reset.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                    $changed = 0
+                    for ($y = 405; $y -lt 417; $y++) {
+                        for ($x = 700; $x -lt 900; $x++) {
+                            if ($bitmap.GetPixel($x, $y).ToArgb() -ne $resetBitmap.GetPixel($x, $y).ToArgb()) { $changed++ }
+                        }
+                    }
+                    if ($changed -lt 100) { throw "Lighting reset did not update the brightness slider ($changed pixels)." }
+                    Write-Output "Demo lighting reset changed $changed brightness slider pixels."
+                } finally {
+                    $resetGraphics.Dispose()
+                    $resetBitmap.Dispose()
+                }
+            }
             if ($tab -eq 'settings-light') {
                 if ($width -ne 1040 -or $height -ne 711) { throw "Settings interaction check requires a 1040x711 window, got ${width}x${height}." }
                 if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the settings demo.' }
