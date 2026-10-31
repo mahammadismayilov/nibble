@@ -78,6 +78,7 @@ pub fn read_mouse() -> Result<Readout, String> {
         let mut result = Readout { vid: info.vendor_id(), pid: info.product_id(), path: info.path().to_bytes().to_vec(), ..Default::default() };
         match probe_mouse(&mouse, &mut result) {
             Ok(()) => {
+                if result.model_confirmed && readout_quality(&result) == 6 { return Ok(result); }
                 if best.as_ref().is_none_or(|previous| prefer_readout(&result, previous)) { best = Some(result); }
             }
             Err(error) => last_error = Some(error),
