@@ -941,7 +941,7 @@ impl Nibble {
                 .child(div().relative().font_weight(FontWeight::SEMIBOLD)
                     .child(div().id("profile-menu").cursor_pointer().child(format!("{}  ⌄", self.profiles.current()["name"].as_str().unwrap_or("Profile")))
                         .on_click(cx.listener(|this, _, _, cx| { this.show_profiles = !this.show_profiles; cx.notify(); })))
-                    .child(profile_menu))
+                    .when(self.show_profiles, |container| container.child(profile_menu)))
                 .child(div().id("theme").cursor_pointer().rounded(px(8.0)).px(px(9.0)).py(px(7.0)).text_size(px(18.0))
                     .child(if self.dark { "☼" } else { "☾" })
                     .on_click(cx.listener(|this, _, _, cx| { this.set_theme(!this.dark, cx); })))
