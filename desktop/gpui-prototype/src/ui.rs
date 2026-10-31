@@ -93,10 +93,17 @@ pub struct Nibble {
 }
 
 impl Nibble {
-    pub fn new(cx: &mut Context<Self>, demo: bool, experimental_write: bool, demo_screen: usize, demo_light: bool, background: BackgroundStyle) -> Self {
+    pub fn new(cx: &mut Context<Self>, demo: bool, demo_two_profiles: bool, experimental_write: bool, demo_screen: usize, demo_light: bool, background: BackgroundStyle) -> Self {
         if !demo { Self::scan(cx); Self::schedule_status_poll(cx); }
         let (profiles, profile_error, profiles_writable) = if demo {
-            (Profiles::new(), None, true)
+            let mut profiles = Profiles::new();
+            if demo_two_profiles {
+                let mut second = profiles.current().clone();
+                second["name"] = "Second Profile".into();
+                profiles.import(&second.to_string()).expect("valid demo profile");
+                profiles.select(0).expect("default demo profile");
+            }
+            (profiles, None, true)
         } else if let Some(path) = profile::profile_path() {
             match Profiles::load(&path) {
                 Ok(profiles) => (profiles, None, true),

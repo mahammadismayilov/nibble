@@ -30,6 +30,7 @@ foreach ($tab in $tabs) {
     } else {
         $argsForDemo = @('--demo', "--demo-tab=$($tab -replace '-light$', '')")
         if ($tab.EndsWith('-light')) { $argsForDemo += '--demo-light' }
+        if ($tab -eq 'home-light') { $argsForDemo += '--demo-two-profiles' }
         $process = Start-Process -FilePath $exe -ArgumentList $argsForDemo -PassThru -WindowStyle Normal -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     }
     try {
@@ -129,6 +130,38 @@ foreach ($tab in $tabs) {
                         Write-Output "Demo disconnect/reconnect changed $changed and $restored sampled pixels."
                     } finally { $reconnectGraphics.Dispose(); $reconnected.Dispose() }
                 } finally { $disconnectGraphics.Dispose(); $disconnected.Dispose() }
+                if (-not [CaptureWindow]::SetCursorPos($rect.Left + 900, $rect.Top + 66)) { throw 'Could not position the pointer for the profile menu.' }
+                [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep -Seconds 1
+                $menu = [System.Drawing.Bitmap]::new($width, $height)
+                $menuGraphics = [System.Drawing.Graphics]::FromImage($menu)
+                try {
+                    $menuDc = $menuGraphics.GetHdc()
+                    try { $menuPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $menuDc, 2) }
+                    finally { $menuGraphics.ReleaseHdc($menuDc) }
+                    if (-not $menuPrinted) { throw 'Could not capture the profile menu.' }
+                    $menu.Save((Join-Path $output 'home-light-profiles.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                    if (-not [CaptureWindow]::SetCursorPos($rect.Left + 900, $rect.Top + 151)) { throw 'Could not position the pointer for the second profile.' }
+                    [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                    [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                    Start-Sleep -Seconds 1
+                    $selected = [System.Drawing.Bitmap]::new($width, $height)
+                    $selectedGraphics = [System.Drawing.Graphics]::FromImage($selected)
+                    try {
+                        $selectedDc = $selectedGraphics.GetHdc()
+                        try { $selectedPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $selectedDc, 2) }
+                        finally { $selectedGraphics.ReleaseHdc($selectedDc) }
+                        if (-not $selectedPrinted) { throw 'Could not capture the selected profile.' }
+                        $selected.Save((Join-Path $output 'home-light-second-profile.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                        $headerChanges = 0
+                        for ($y = 57; $y -lt 78; $y++) { for ($x = 850; $x -lt 980; $x++) {
+                            if ($bitmap.GetPixel($x, $y).ToArgb() -ne $selected.GetPixel($x, $y).ToArgb()) { $headerChanges++ }
+                        } }
+                        if ($headerChanges -lt 30) { throw 'Selecting the second demo profile did not update the header.' }
+                        Write-Output "Demo profile selection changed $headerChanges header pixels."
+                    } finally { $selectedGraphics.Dispose(); $selected.Dispose() }
+                } finally { $menuGraphics.Dispose(); $menu.Dispose() }
             }
             if ($tab -eq 'dpi-light' -and $width -eq 1040 -and $height -eq 711) {
                 $before = $bitmap.GetPixel(230, 450).ToArgb()
