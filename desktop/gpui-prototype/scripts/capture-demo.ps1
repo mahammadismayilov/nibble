@@ -89,6 +89,47 @@ foreach ($tab in $tabs) {
             $bitmap.Save((Join-Path $output "$tab.png"), [System.Drawing.Imaging.ImageFormat]::Png)
             if ($colors.Count -lt 8) { throw "The $tab capture appears blank ($($colors.Count) sampled colors)." }
             Write-Output "$tab capture: ${width}x${height}, $($colors.Count) sampled colors"
+            if ($tab -eq 'home-light') {
+                if ($width -ne 1040 -or $height -ne 711) { throw "Connection check requires a 1040x711 window, got ${width}x${height}." }
+                if (-not [CaptureWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the connection demo.' }
+                if (-not [CaptureWindow]::SetCursorPos($rect.Left + 755, $rect.Top + 66)) { throw 'Could not position the pointer for the connection check.' }
+                [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                Start-Sleep -Seconds 1
+                $disconnected = [System.Drawing.Bitmap]::new($width, $height)
+                $disconnectGraphics = [System.Drawing.Graphics]::FromImage($disconnected)
+                try {
+                    $disconnectDc = $disconnectGraphics.GetHdc()
+                    try { $disconnectPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $disconnectDc, 2) }
+                    finally { $disconnectGraphics.ReleaseHdc($disconnectDc) }
+                    if (-not $disconnectPrinted) { throw 'Could not capture the disconnected demo.' }
+                    $disconnected.Save((Join-Path $output 'home-light-disconnected.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                    $changed = 0
+                    for ($y = 150; $y -lt 650; $y += 3) { for ($x = 500; $x -lt 1000; $x += 3) {
+                        if ($bitmap.GetPixel($x, $y).ToArgb() -ne $disconnected.GetPixel($x, $y).ToArgb()) { $changed++ }
+                    } }
+                    if ($changed -lt 50) { throw 'Disconnect did not clear the displayed sample readout.' }
+                    if (-not [CaptureWindow]::SetCursorPos($rect.Left + 755, $rect.Top + 66)) { throw 'Could not position the pointer to reconnect.' }
+                    [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                    [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                    Start-Sleep -Seconds 1
+                    $reconnected = [System.Drawing.Bitmap]::new($width, $height)
+                    $reconnectGraphics = [System.Drawing.Graphics]::FromImage($reconnected)
+                    try {
+                        $reconnectDc = $reconnectGraphics.GetHdc()
+                        try { $reconnectPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $reconnectDc, 2) }
+                        finally { $reconnectGraphics.ReleaseHdc($reconnectDc) }
+                        if (-not $reconnectPrinted) { throw 'Could not capture the reconnected demo.' }
+                        $reconnected.Save((Join-Path $output 'home-light-reconnected.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                        $restored = 0
+                        for ($y = 150; $y -lt 650; $y += 3) { for ($x = 500; $x -lt 1000; $x += 3) {
+                            if ($disconnected.GetPixel($x, $y).ToArgb() -ne $reconnected.GetPixel($x, $y).ToArgb()) { $restored++ }
+                        } }
+                        if ($restored -lt 50) { throw 'Reconnect did not restore the displayed sample readout.' }
+                        Write-Output "Demo disconnect/reconnect changed $changed and $restored sampled pixels."
+                    } finally { $reconnectGraphics.Dispose(); $reconnected.Dispose() }
+                } finally { $disconnectGraphics.Dispose(); $disconnected.Dispose() }
+            }
             if ($tab -eq 'dpi-light' -and $width -eq 1040 -and $height -eq 711) {
                 $before = $bitmap.GetPixel(230, 450).ToArgb()
                 $beforeGap = $bitmap.GetPixel(720, 220).ToArgb()

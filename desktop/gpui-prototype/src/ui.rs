@@ -59,6 +59,8 @@ pub struct Nibble {
     experimental_write: bool,
     scanning: bool,
     applying: bool,
+    connection_paused: bool,
+    demo_disconnected_readout: Option<Readout>,
     readout: Option<Readout>,
     error: Option<String>,
     message: Option<String>,
@@ -125,6 +127,8 @@ impl Nibble {
             experimental_write,
             scanning: !demo,
             applying: false,
+            connection_paused: false,
+            demo_disconnected_readout: None,
             readout,
             error: None,
             message: profile_error,
@@ -192,7 +196,7 @@ impl Nibble {
     }
 
     fn poll_status(&mut self, cx: &mut Context<Self>) {
-        if self.demo || self.scanning || self.applying || self.dpi_drag.is_some() || self.light_drag.is_some()
+        if self.demo || self.connection_paused || self.scanning || self.applying || self.dpi_drag.is_some() || self.light_drag.is_some()
             || self.dpi_input.is_some() || self.color_input.is_some() { return; }
         let Some(snapshot) = self.readout.clone() else {
             self.scanning = true;
@@ -229,6 +233,30 @@ impl Nibble {
                 cx.notify();
             });
         }).detach();
+        cx.notify();
+    }
+
+    fn toggle_connection(&mut self, cx: &mut Context<Self>) {
+        if self.scanning || self.applying {
+            self.message = Some("Wait until the current device operation finishes.".into());
+            cx.notify(); return;
+        }
+        if self.connection_paused || self.readout.is_none() {
+            self.connection_paused = false;
+            self.error = None;
+            self.message = None;
+            if self.demo { self.readout = self.demo_disconnected_readout.take(); }
+            else { self.scanning = true; Self::scan(cx); }
+        } else {
+            self.connection_paused = true;
+            if self.demo { self.demo_disconnected_readout = self.readout.take(); }
+            else { self.readout = None; }
+            self.error = None;
+            self.message = Some("Disconnected. Receiver polling is paused.".into());
+            self.dpi_drag = None; self.dpi_input = None; self.light_drag = None;
+            self.color_input = None; self.color_stage = None; self.pending_left_key = None;
+            self.confirm_reset_keys = false; self.confirm_reset_lighting = false; self.confirm_reset_dpi = false;
+        }
         cx.notify();
     }
 
@@ -951,7 +979,9 @@ impl Nibble {
     }
 
     fn header(&self, p: Palette, cx: &mut Context<Self>) -> Div {
-        let status = if self.demo {
+        let status = if self.connection_paused {
+            "Disconnected · Receiver polling paused".to_string()
+        } else if self.demo {
             "Sample data · No receiver access".to_string()
         } else if self.scanning {
             "Checking receiver".to_string()
@@ -992,9 +1022,9 @@ impl Nibble {
                     .child(div().font_weight(FontWeight::NORMAL).text_size(px(11.0)).text_color(rgb(p.muted)).child("v1.0.6")))
                 .child(div().ml(px(8.0)).font_weight(FontWeight::SEMIBOLD).child("AJAZZ AJ179 / AJ179P  ⌄"))
                 .child(div().flex_1().min_w(px(0.0)).text_size(px(12.0)).text_color(rgb(if self.readout.is_some() { p.success } else { p.muted })).child(format!("●  {status}")))
-                .child(div().id("refresh").cursor_pointer().rounded(px(8.0)).px(px(12.0)).py(px(8.0)).bg(rgb(p.accent_soft)).text_color(rgb(p.accent))
-                    .child(if self.demo { "Demo" } else if self.scanning { "Checking…" } else { "Refresh" })
-                    .on_click(cx.listener(|this, _, _, cx| { if !this.demo && !this.scanning && !this.applying { this.scanning = true; this.message = None; Self::scan(cx); cx.notify(); } })))
+                .child(div().id("connection-toggle").cursor_pointer().rounded(px(8.0)).px(px(12.0)).py(px(8.0)).bg(rgb(p.accent_soft)).text_color(rgb(p.accent))
+                    .child(if self.scanning { "Checking…" } else if self.connection_paused || self.readout.is_none() { "Connect" } else { "Disconnect" })
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_connection(cx))))
                 .child(div().text_color(rgb(p.muted)).text_size(px(12.0)).child(format!("▰  {battery}")))
                 .child(div().relative().font_weight(FontWeight::SEMIBOLD)
                     .child(div().id("profile-menu").cursor_pointer().child(format!("{}  ⌄", self.profiles.current()["name"].as_str().unwrap_or("Profile")))
@@ -1509,6 +1539,7 @@ impl Render for Nibble {
         let notice = if self.dpi_drag.is_some() { "Release to apply the DPI value.".to_string() }
             else if self.color_input.is_some() { "Enter a profile color as #RRGGBB, then press Enter to save or Escape to cancel. This does not change the mouse.".to_string() }
             else if self.dpi_input.is_some() { "Enter a DPI value, then press Enter to apply or Escape to cancel.".to_string() }
+            else if self.connection_paused { "Disconnected · Receiver polling is paused.".to_string() }
             else if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
             else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
