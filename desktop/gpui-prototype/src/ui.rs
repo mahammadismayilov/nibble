@@ -946,7 +946,7 @@ impl Nibble {
         let dpi_editable = (self.demo || self.experimental_write) && data.is_some_and(|d| d.dpi_count.is_some() && d.dpi.len() == 6);
         let rate_editable = (self.demo || self.experimental_write) && data.and_then(|d| d.rate).is_some();
         let mut stage_rows = div().flex().flex_col().gap(px(8.0));
-        for pair in [[Some(0), Some(1)], [Some(2), Some(3)], [Some(4), None], [Some(5), None]] {
+        for pair in [[Some(0), Some(1)], [Some(2), Some(3)], [Some(4), Some(5)]] {
             let mut row = div().flex().gap(px(8.0));
             for i in pair.into_iter().flatten() {
                 if i >= stage_count { continue; }
@@ -968,14 +968,14 @@ impl Nibble {
             stage_rows = stage_rows.child(row);
         }
         let bounds = self.dpi_track_bounds.clone();
-        let mut track = div().id("dpi-track").relative().w_full().h(px(66.0))
+        let mut track = div().id("dpi-track").relative().w_full().h(px(144.0))
             .child(canvas(move |rect, _, _| { bounds.set(Some(rect)); }, |_, _, _, _| {}).absolute().size_full())
-            .child(div().absolute().top(px(41.0)).w_full().h(px(2.0)).bg(rgb(p.muted)));
+            .child(div().absolute().top(px(126.0)).w_full().h(px(2.0)).bg(rgb(p.muted)));
         if dpi_editable {
             track = track.cursor_pointer()
                 .on_mouse_down(MouseButton::Left, cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
                     if let Some(bounds) = this.dpi_track_bounds.get() {
-                        if event.position.y >= bounds.origin.y + px(30.0) { this.start_dpi_drag(event.position, cx); }
+                        if event.position.y >= bounds.origin.y + px(115.0) { this.start_dpi_drag(event.position, cx); }
                     }
                 }))
                 .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
@@ -991,10 +991,10 @@ impl Nibble {
                 let position = dpi_position(value);
                 let active = data.active_dpi == Some(i);
                 let color = profile_colors.get(i).copied().unwrap_or(p.accent);
-                let mut number = div().id(("dpi-number", i)).absolute().left(relative(position)).top(px(0.0)).ml(px(-20.0))
-                    .text_size(px(18.0)).font_weight(FontWeight::BOLD)
+                let mut number = div().id(("dpi-number", i)).absolute().left(relative(position)).top(px(i as f32 * 18.0)).ml(px(-20.0))
+                    .text_size(px(13.0)).font_weight(FontWeight::BOLD)
                     .text_color(rgb(if active { color } else { p.text })).child(value.to_string());
-                let mut dot = div().id(("dpi-node", i)).absolute().left(relative(position)).top(px(36.0)).ml(px(-6.0)).size(px(12.0))
+                let mut dot = div().id(("dpi-node", i)).absolute().left(relative(position)).top(px(120.0)).ml(px(-6.0)).size(px(12.0))
                     .rounded_full().bg(rgb(if active { color } else { p.text }));
                 if dpi_editable {
                     number = number.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.select_dpi(i, cx)));
@@ -1008,7 +1008,7 @@ impl Nibble {
         for value in [200u16, 1000, 2000, 3000, 4000, 6000, 8000, 26000] {
             scale = scale.child(div().absolute().left(relative(dpi_position(value))).ml(px(-12.0)).child(value.to_string()));
         }
-        let chart = div().mt(px(55.0)).h(px(160.0)).px(px(12.0)).flex().flex_col().justify_center()
+        let chart = div().mt(px(15.0)).h(px(190.0)).px(px(12.0)).flex().flex_col().justify_center()
             .child(track).child(scale);
         let mut level_buttons = div().flex().rounded(px(8.0)).bg(rgb(p.inset)).p(px(4.0));
         for level in 1..=6 {
@@ -1057,14 +1057,13 @@ impl Nibble {
             apply_colors = apply_colors.cursor_pointer().bg(rgb(p.inset)).text_color(rgb(p.text))
                 .on_click(cx.listener(|this, _, _, cx| this.apply_profile_colors(cx)));
         }
-        let hero = card(p).flex_1().min_w(px(0.0)).h(px(520.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
+        let hero = card(p).flex_1().min_w(px(0.0)).h(px(560.0)).px(px(36.0)).py(px(28.0)).flex().flex_col()
             .child(div().flex().items_center().justify_between()
                 .child(div().flex().items_center().gap(px(20.0)).child(heading("DPI Sensitivity")).child(levels))
                 .child(div().flex().items_center().gap(px(8.0)).child(apply_colors).child(muted(p, "Reset DPI"))))
             .child(chart)
-            .child(div().mt(px(25.0)).flex().items_center().justify_between().gap(px(20.0))
-                .child(stage_rows)
-                .child(fine_controls))
+            .child(div().mt(px(12.0)).child(stage_rows))
+            .child(div().mt(px(12.0)).child(fine_controls))
             .child(muted(p, "Apply profile colors replaces all six colors on the mouse."));
         let mut rate_options = div().flex().flex_col().gap(px(8.0)).mt(px(14.0));
         for pair in [[125, 250], [500, 1000]] {
@@ -1082,7 +1081,7 @@ impl Nibble {
             }
             rate_options = rate_options.child(row);
         }
-        let rates = card(p).w(px(280.0)).h(px(520.0)).child(heading("Report Rate"))
+        let rates = card(p).w(px(280.0)).h(px(560.0)).child(heading("Report Rate"))
             .child(muted(p, "How often the mouse reports position to the PC"))
             .child(rate_options);
         div().flex().w_full().gap(px(16.0)).child(hero).child(rates)
