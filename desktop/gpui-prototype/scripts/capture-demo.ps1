@@ -178,6 +178,60 @@ foreach ($tab in $tabs) {
                     finally { $settingsGraphics.ReleaseHdc($settingsDc) }
                     if (-not $settingsPrinted) { throw 'Could not capture the profile reset control.' }
                     $settingsBottom.Save((Join-Path $output 'settings-light-profile-reset.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                    function Capture-ResetState([string]$name) {
+                        $shot = [System.Drawing.Bitmap]::new($width, $height)
+                        $shotGraphics = [System.Drawing.Graphics]::FromImage($shot)
+                        try {
+                            $shotDc = $shotGraphics.GetHdc()
+                            try { $shotPrinted = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $shotDc, 2) }
+                            finally { $shotGraphics.ReleaseHdc($shotDc) }
+                            if (-not $shotPrinted) { throw "Could not capture $name." }
+                            $shot.Save((Join-Path $output "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+                            return $shot
+                        } finally { $shotGraphics.Dispose() }
+                    }
+                    function Click-ResetPoint([int]$x, [int]$y) {
+                        if (-not [CaptureWindow]::SetCursorPos($rect.Left + $x, $rect.Top + $y)) { throw 'Could not position the pointer for profile reset.' }
+                        [CaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+                        [CaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+                        Start-Sleep -Seconds 1
+                    }
+                    Click-ResetPoint 935 452
+                    $pendingReset = Capture-ResetState 'settings-light-profile-reset-pending'
+                    try {
+                        $actionChanges = 0; $headerChanges = 0
+                        for ($y = 430; $y -lt 475; $y += 2) { for ($x = 800; $x -lt 995; $x += 2) {
+                            if ($settingsBottom.GetPixel($x, $y).ToArgb() -ne $pendingReset.GetPixel($x, $y).ToArgb()) { $actionChanges++ }
+                        } }
+                        for ($y = 57; $y -lt 78; $y++) { for ($x = 850; $x -lt 980; $x++) {
+                            if ($settingsBottom.GetPixel($x, $y).ToArgb() -ne $pendingReset.GetPixel($x, $y).ToArgb()) { $headerChanges++ }
+                        } }
+                        if ($actionChanges -lt 40 -or $headerChanges -ne 0) { throw 'Profile reset confirmation did not appear without changing the selected profile.' }
+                        Click-ResetPoint 835 452
+                        $cancelledReset = Capture-ResetState 'settings-light-profile-reset-cancelled'
+                        try {
+                            $cancelChanges = 0; $cancelActionChanges = 0
+                            for ($y = 57; $y -lt 78; $y++) { for ($x = 850; $x -lt 980; $x++) {
+                                if ($settingsBottom.GetPixel($x, $y).ToArgb() -ne $cancelledReset.GetPixel($x, $y).ToArgb()) { $cancelChanges++ }
+                            } }
+                            for ($y = 430; $y -lt 475; $y += 2) { for ($x = 800; $x -lt 995; $x += 2) {
+                                if ($settingsBottom.GetPixel($x, $y).ToArgb() -ne $cancelledReset.GetPixel($x, $y).ToArgb()) { $cancelActionChanges++ }
+                            } }
+                            if ($cancelChanges -ne 0 -or $cancelActionChanges -ne 0) { throw 'Cancelling the profile reset did not restore the original controls and profile.' }
+                            Click-ResetPoint 935 452
+                            Click-ResetPoint 935 452
+                            $confirmedReset = Capture-ResetState 'settings-light-profile-reset-confirmed'
+                            try {
+                                $resetChanges = 0; $defaultDifference = 0
+                                for ($y = 57; $y -lt 78; $y++) { for ($x = 850; $x -lt 980; $x++) {
+                                    if ($settingsBottom.GetPixel($x, $y).ToArgb() -ne $confirmedReset.GetPixel($x, $y).ToArgb()) { $resetChanges++ }
+                                    if ($bitmap.GetPixel($x, $y).ToArgb() -ne $confirmedReset.GetPixel($x, $y).ToArgb()) { $defaultDifference++ }
+                                } }
+                                if ($resetChanges -lt 30 -or $defaultDifference -ne 0) { throw 'Confirming the profile reset did not restore the default profile.' }
+                                Write-Output 'Demo profile reset confirmation, cancellation, and reset passed.'
+                            } finally { $confirmedReset.Dispose() }
+                        } finally { $cancelledReset.Dispose() }
+                    } finally { $pendingReset.Dispose() }
                 } finally { $settingsGraphics.Dispose(); $settingsBottom.Dispose() }
             }
             if ($tab -eq 'dpi-light' -and $width -eq 1040 -and $height -eq 711) {
