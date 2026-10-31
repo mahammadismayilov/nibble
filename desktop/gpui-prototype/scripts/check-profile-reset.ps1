@@ -126,5 +126,12 @@ try {
         if ($edited.profiles[0].settings.debounce -ne 5 -or $edited.profiles[0].settings.moveWake -ne $false) { throw 'Offline power settings were not saved.' }
         if ($edited.profiles[0].dpiStages[2].value -ne 1400) { throw 'Offline settings editing changed an unrelated DPI value.' }
         Write-Output 'Offline sensor and power settings were saved without changing DPI.'
+        Click-Point 260 119
+        Click-Point 900 255
+        Click-Point 735 410
+        $edited = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+        if ($edited.profiles[0].light.mode -ne 'solid' -or $edited.profiles[0].light.brightness -ne 50) { throw 'Offline lighting edits were not saved.' }
+        if ($edited.profiles[0].settings.debounce -ne 5 -or $edited.profiles[0].dpiStages[2].value -ne 1400) { throw 'Offline lighting editing changed unrelated profile values.' }
+        Write-Output 'Offline lighting mode and brightness were saved without changing other settings.'
     } finally { if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force } }
 } finally { $env:LOCALAPPDATA = $originalLocalAppData }

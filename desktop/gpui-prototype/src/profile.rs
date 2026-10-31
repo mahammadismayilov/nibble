@@ -59,11 +59,15 @@ impl Profiles {
             Some("breathe") => Some(LightMode::Breathing), Some("solid") => Some(LightMode::Constant),
             Some("off") => Some(LightMode::Off), _ => None,
         };
+        let color = active_dpi.and_then(|index| profile["dpiStages"].get(index))
+            .and_then(|stage| stage["color"].as_str()).and_then(|color| color.strip_prefix('#'))
+            .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+            .map(|value| [(value >> 16) as u8, (value >> 8) as u8, value as u8]);
         let lighting = mode.and_then(|mode| Some(device::Lighting {
             mode,
             brightness: u8::try_from(light["brightness"].as_u64()?).ok()?,
             speed: u8::try_from(light["speed"].as_u64()?).ok()?,
-            color: None,
+            color,
         }));
         let settings = &profile["settings"];
         let lod = match settings["lod"].as_str() { Some("low") => Some(1), Some("high") => Some(2), _ => None };
@@ -367,6 +371,7 @@ mod tests {
         assert_eq!(saved.rate, Some(500));
         assert_eq!(saved.sensor.as_ref().map(|sensor| sensor.lod), Some(1));
         assert_eq!(saved.sensor.as_ref().map(|sensor| sensor.angle_snap), Some(false));
+        assert_eq!(saved.lighting.as_ref().and_then(|light| light.color), Some([0, 0, 255]));
         assert!(saved.battery.is_none());
         assert!(!saved.model_confirmed);
     }

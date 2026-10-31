@@ -967,6 +967,19 @@ impl Nibble {
 
     fn update_lighting(&mut self, change: LightChange, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
+        if !self.demo && self.readout.is_none() {
+            let mut data = self.profiles.saved_readout();
+            let Some(light) = &mut data.lighting else { return; };
+            match change {
+                LightChange::Mode(mode) => light.mode = mode,
+                LightChange::Brightness(value) if light.mode != LightMode::Off && value <= 100 && value % 25 == 0 => light.brightness = value,
+                LightChange::Speed(value) if light.mode == LightMode::Breathing && (1..=10).contains(&value) => light.speed = value,
+                LightChange::Reset => { light.mode = LightMode::Breathing; light.brightness = 100; light.speed = 5; }
+                _ => return,
+            }
+            self.save_offline_scope(&data, ReadoutScope::Lighting(change), cx);
+            return;
+        }
         if self.demo {
             if let Some(light) = self.readout.as_mut().and_then(|data| data.lighting.as_mut()) {
                 match change { LightChange::Mode(mode) => light.mode = mode, LightChange::Brightness(value) => light.brightness = value, LightChange::Speed(value) => light.speed = value, LightChange::Reset => { light.mode = LightMode::Breathing; light.brightness = 100; light.speed = 6; } }
@@ -1022,7 +1035,8 @@ impl Nibble {
         let Some((active, pending)) = self.light_drag.take() else { return; };
         if active != speed { cx.notify(); return; }
         let value = self.light_value_at(speed, position).unwrap_or(pending);
-        let light = self.readout.as_ref().and_then(|data| data.lighting.as_ref());
+        let display = self.display_readout();
+        let light = display.as_ref().and_then(|data| data.lighting.as_ref());
         let allowed = light.is_some_and(|light| if speed { light.mode == LightMode::Breathing && light.speed != value }
             else { light.mode != LightMode::Off && light.brightness != value });
         if allowed { self.update_lighting(if speed { LightChange::Speed(value) } else { LightChange::Brightness(value) }, cx); }
@@ -1047,14 +1061,14 @@ impl Nibble {
                     this.start_light_drag(speed, event.position, cx);
                 }))
                 .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _, cx| {
-                    let current = this.readout.as_ref().and_then(|data| data.lighting.as_ref()).map(|light| if speed { light.speed } else { light.brightness });
+                    let current = this.display_readout().and_then(|data| data.lighting.map(|light| if speed { light.speed } else { light.brightness }));
                     if let Some(current) = current {
                         let step: u8 = if speed { 1 } else { 25 };
                         let min = if speed { 1 } else { 0 };
                         let max = if speed { 10 } else { 100 };
                         let next = match event.keystroke.key.as_str() {
-                            "right" | "up" if speed => Some(next_reported_speed(current, true)),
-                            "left" | "down" if speed => Some(next_reported_speed(current, false)),
+                            "right" | "up" if speed && this.readout.is_some() => Some(next_reported_speed(current, true)),
+                            "left" | "down" if speed && this.readout.is_some() => Some(next_reported_speed(current, false)),
                             "right" | "up" => Some(current.saturating_add(step).min(max)),
                             "left" | "down" => Some(current.saturating_sub(step).max(min)),
                             "home" => Some(min), "end" => Some(max), _ => None,
@@ -1399,12 +1413,13 @@ impl Nibble {
     }
 
     fn lighting(&self, p: Palette, cx: &mut Context<Self>) -> Div {
+        let saved = (!self.demo && self.readout.is_none()).then(|| self.profiles.saved_readout());
         let image = div().w(px(410.0)).h(px(560.0)).flex().flex_col().items_center().justify_center()
             .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
-            .child(div().mt(px(18.0)).child(muted(p, "Live preview of the selected effect")));
+            .child(div().mt(px(18.0)).child(muted(p, if saved.is_some() { "Saved profile effect" } else { "Live preview of the selected effect" })));
         let mut effects = div().flex().flex_col().gap(px(8.0));
-        let lighting = self.readout.as_ref().and_then(|d| d.lighting.as_ref());
-        let light_editable = (self.demo || self.experimental_write) && lighting.is_some();
+        let lighting = self.readout.as_ref().or(saved.as_ref()).and_then(|d| d.lighting.as_ref());
+        let light_editable = ((self.demo || self.experimental_write && self.readout.is_some()) || (saved.is_some() && self.profiles_writable)) && lighting.is_some();
         for (row_index, row) in [["Flowing light", "Breathing", "Constant light"], ["Neon", "Colorful waves", "Close"]].into_iter().enumerate() {
             let mut line = div().flex().gap(px(8.0));
             for (item_index, item) in row.into_iter().enumerate() {
@@ -1412,7 +1427,7 @@ impl Nibble {
                 let mode = match item { "Breathing" => Some(LightMode::Breathing), "Constant light" => Some(LightMode::Constant), "Close" => Some(LightMode::Off), _ => None };
                 let mut button = div().id(("light-mode", row_index * 3 + item_index)).flex_1().rounded(px(10.0)).bg(rgb(if selected { p.accent_soft } else { p.inset }))
                     .text_color(rgb(if selected { p.accent } else if mode.is_some() { p.text } else { p.muted })).px(px(12.0)).py(px(16.0)).text_center().child(item);
-                if let Some(mode) = mode.filter(|_| (self.demo || self.experimental_write) && lighting.is_some()) {
+                if let Some(mode) = mode.filter(|_| light_editable) {
                     button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.update_lighting(LightChange::Mode(mode), cx)));
                 }
                 line = line.child(button);
@@ -1441,7 +1456,7 @@ impl Nibble {
                 .child(muted(p, "Constant mode color = active DPI stage color (change colors on the DPI tab)")))
                 .child(reset_actions))
             .child(effects)
-            .child(muted(p, if self.demo || self.experimental_write { "Select an effect. Live changes require a readable current color." } else { "Lighting controls are not available in the preview." }))
+            .child(muted(p, if saved.is_some() { "Editing saved profile values. Mouse settings are not changed." } else if self.demo || self.experimental_write { "Select an effect. Live changes require a readable current color." } else { "Lighting controls are not available in the preview." }))
             .child(brightness);
         if lighting.is_some_and(|light| light.mode == LightMode::Breathing) { card = card.child(speed); }
         let current_color = lighting.and_then(|light| light.color).map(|[r, g, b]| (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b));
