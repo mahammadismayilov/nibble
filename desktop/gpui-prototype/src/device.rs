@@ -61,19 +61,36 @@ pub struct Sensor { pub lod: u8, pub angle_snap: bool, pub ripple: bool }
 // Only GET requests are sent. The handle is closed when the scan finishes.
 pub fn read_mouse() -> Result<Readout, String> {
     let api = HidApi::new().map_err(|error| error.to_string())?;
-    let info = api.device_list().find(|device| {
+    let candidates: Vec<_> = api.device_list().filter(|device| {
         matches!(device.vendor_id(), 0x248a | 0x249a)
             && matches!(device.product_id(), 0x5c2e | 0x5c2f)
             && ((device.usage_page() == 1 && device.usage() == 0)
                 || device.usage_page() >= 0xff00)
-    }).ok_or("AJ179P receiver not found")?;
-    let mouse = info.open_device(&api).map_err(|error| format!("Receiver found, but could not open it: {error}"))?;
-    let mut result = Readout { vid: info.vendor_id(), pid: info.product_id(), path: info.path().to_bytes().to_vec(), ..Default::default() };
+    }).collect();
+    if candidates.is_empty() { return Err("AJ179P receiver not found".into()); }
+    let mut best = None;
+    let mut last_error = None;
+    for info in candidates {
+        let mouse = match info.open_device(&api) {
+            Ok(mouse) => mouse,
+            Err(error) => { last_error = Some(format!("Receiver found, but could not open it: {error}")); continue; }
+        };
+        let mut result = Readout { vid: info.vendor_id(), pid: info.product_id(), path: info.path().to_bytes().to_vec(), ..Default::default() };
+        match probe_mouse(&mouse, &mut result) {
+            Ok(()) => {
+                if best.as_ref().is_none_or(|previous| prefer_readout(&result, previous)) { best = Some(result); }
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    best.ok_or_else(|| last_error.unwrap_or_else(|| "Could not read an AJ179P receiver".into()))
+}
 
+fn probe_mouse(mouse: &HidDevice, result: &mut Readout) -> Result<(), String> {
     if let Some(reply) = query(&mouse, 0x10) {
         check_model(&reply)?;
         result.model_confirmed = model_id(&reply) == Some(*b"M179");
-        parse_battery(&reply, &mut result);
+        parse_battery(&reply, result);
     }
     if let Some(reply) = query(&mouse, 0x12) {
         result.rate = parse_rate(&reply);
@@ -94,7 +111,18 @@ pub fn read_mouse() -> Result<Readout, String> {
     if let Some(reply) = query(&mouse, 0x19) {
         result.keys = parse_keymap(&reply);
     }
-    Ok(result)
+    Ok(())
+}
+
+fn readout_quality(readout: &Readout) -> usize {
+    usize::from(readout.battery.is_some()) + usize::from(readout.rate.is_some())
+        + usize::from(readout.active_dpi.is_some() && readout.dpi.len() == 6)
+        + usize::from(readout.lighting.is_some()) + usize::from(readout.sensor.is_some())
+        + usize::from(readout.keys.is_some())
+}
+
+fn prefer_readout(candidate: &Readout, previous: &Readout) -> bool {
+    (candidate.model_confirmed, readout_quality(candidate)) > (previous.model_confirmed, readout_quality(previous))
 }
 
 fn open_original_mouse(snapshot: &Readout) -> Result<(HidApi, HidDevice), String> {
@@ -752,6 +780,21 @@ mod tests {
         assert_eq!(packet[5], 1);
         let (active, count, _) = apply_dpi_change(4, 6, vec![1000; 6], DpiChange::Reset).unwrap();
         assert_eq!((active, count), (1, 6));
+    }
+
+    #[test]
+    fn receiver_selection_prefers_confirmed_model_then_more_complete_reply() {
+        let empty = Readout::default();
+        let partial = Readout { rate: Some(1000), ..Default::default() };
+        let complete = Readout { rate: Some(1000), dpi: vec![400; 6], active_dpi: Some(0), ..Default::default() };
+        let confirmed = Readout { model_confirmed: true, ..Default::default() };
+        let confirmed_complete = Readout { model_confirmed: true, rate: Some(500), ..Default::default() };
+        assert!(prefer_readout(&partial, &empty));
+        assert!(prefer_readout(&complete, &partial));
+        assert!(prefer_readout(&confirmed, &complete));
+        assert!(prefer_readout(&confirmed_complete, &confirmed));
+        assert!(!prefer_readout(&empty, &partial));
+        assert!(!prefer_readout(&partial, &partial));
     }
 
     #[test]
