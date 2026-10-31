@@ -1491,6 +1491,7 @@ impl Render for Nibble {
             else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
             else if let Some(message) = &self.message { message.clone() }
+            else if self.experimental_write && self.readout.as_ref().is_some_and(|data| !data.model_confirmed) { "Mouse model is unconfirmed. Settings cannot be sent; refresh to retry.".into() }
             else if self.experimental_write { "Experimental mode · DPI, report rate, and sensor controls can change the receiver. Close other mouse software.".into() }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
         let background_alpha = match self.background { BackgroundStyle::Solid => 0xff, BackgroundStyle::Frosted => 0xb8, BackgroundStyle::Clear => 0xa0 };

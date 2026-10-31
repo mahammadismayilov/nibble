@@ -127,13 +127,17 @@ fn prefer_readout(candidate: &Readout, previous: &Readout) -> bool {
 }
 
 fn open_original_mouse(snapshot: &Readout) -> Result<(HidApi, HidDevice), String> {
+    if !snapshot.model_confirmed {
+        return Err("Mouse model is unconfirmed. Refresh before changing settings.".into());
+    }
     let api = HidApi::new().map_err(|error| error.to_string())?;
     let info = api.device_list().find(|device| {
         device.vendor_id() == snapshot.vid && device.product_id() == snapshot.pid
             && device.path().to_bytes() == snapshot.path.as_slice()
     }).ok_or("Receiver changed or disconnected. Refresh before trying again.")?;
     let mouse = info.open_device(&api).map_err(|error| format!("Could not open the receiver: {error}"))?;
-    if let Some(reply) = query(&mouse, 0x10) { check_model(&reply)?; }
+    let reply = query(&mouse, 0x10).ok_or("Could not confirm the mouse model. No settings were sent.")?;
+    require_aj179_model(&reply)?;
     Ok((api, mouse))
 }
 
@@ -148,6 +152,14 @@ fn check_model(reply: &[u8]) -> Result<(), String> {
         Some(id) if id != *b"M179" => Err(format!("Receiver reports model {}. This preview only supports AJ179 / AJ179P.", String::from_utf8_lossy(&id))),
         _ => Ok(()),
     }
+}
+
+fn require_aj179_model(reply: &[u8]) -> Result<(), String> {
+    check_model(reply)?;
+    if model_id(reply) != Some(*b"M179") {
+        return Err("Mouse model is unconfirmed. No settings were sent.".into());
+    }
+    Ok(())
 }
 
 pub fn set_active_dpi(snapshot: &Readout, index: usize) -> Result<(usize, usize, Vec<u16>), String> {
@@ -796,6 +808,18 @@ mod tests {
         assert!(prefer_readout(&confirmed_complete, &confirmed));
         assert!(!prefer_readout(&empty, &partial));
         assert!(!prefer_readout(&partial, &partial));
+    }
+
+    #[test]
+    fn writes_require_a_current_aj179_model_reply() {
+        let mut reply = [0u8; 33];
+        reply[1] = 0x10;
+        reply[5..9].copy_from_slice(b"M179");
+        assert!(require_aj179_model(&reply).is_ok());
+        reply[5..9].copy_from_slice(b"M129");
+        assert!(require_aj179_model(&reply).is_err());
+        reply[5..9].fill(0);
+        assert!(require_aj179_model(&reply).is_err());
     }
 
     #[test]
