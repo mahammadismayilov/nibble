@@ -311,9 +311,8 @@ pub fn set_sensor(snapshot: &Readout, change: SensorChange) -> Result<Sensor, St
     Ok(readback)
 }
 
-pub fn set_key(snapshot: &Readout, index: usize, label: &str) -> Result<[[u8; 3]; 6], String> {
-    if index == 0 { return Err("Left-click is locked to prevent losing mouse control.".into()); }
-    let wire = key_wire(label).ok_or("This button function is not available.")?;
+pub fn set_key(snapshot: &Readout, index: usize, label: &str, left_unlocked: bool) -> Result<[[u8; 3]; 6], String> {
+    let wire = validate_key_selection(index, label, left_unlocked)?;
     let (_api, mouse) = open_original_mouse(snapshot)?;
     let mut keys = query(&mouse, 0x19).and_then(|reply| parse_keymap(&reply))
         .ok_or("Could not read the complete keymap. No settings were sent.")?;
@@ -325,6 +324,12 @@ pub fn set_key(snapshot: &Readout, index: usize, label: &str) -> Result<[[u8; 3]
         .ok_or("Key assignment was sent, but the mouse did not confirm it. Refresh before trying again.")?;
     if readback != keys { return Err("The mouse returned a different keymap. Refresh before trying again.".into()); }
     Ok(readback)
+}
+
+fn validate_key_selection(index: usize, label: &str, left_unlocked: bool) -> Result<[u8; 3], String> {
+    if index >= 6 { return Err("Unsupported mouse button. No settings were sent.".into()); }
+    if index == 0 && label != "Left-Click" && !left_unlocked { return Err("Left-click is locked to prevent losing mouse control.".into()); }
+    key_wire(label).ok_or_else(|| "This button function is not available.".into())
 }
 
 pub fn default_keymap() -> [[u8; 3]; 6] {
@@ -808,6 +813,15 @@ mod tests {
         assert!(prefer_readout(&confirmed_complete, &confirmed));
         assert!(!prefer_readout(&empty, &partial));
         assert!(!prefer_readout(&partial, &partial));
+    }
+
+    #[test]
+    fn left_click_rebinding_requires_unlocked_state() {
+        assert!(validate_key_selection(0, "Right-Click", false).is_err());
+        assert_eq!(validate_key_selection(0, "Left-Click", false).unwrap(), [0x10, 1, 0]);
+        assert_eq!(validate_key_selection(0, "Right-Click", true).unwrap(), [0x10, 2, 0]);
+        assert!(validate_key_selection(6, "Left-Click", true).is_err());
+        assert!(validate_key_selection(0, "Not supported", true).is_err());
     }
 
     #[test]

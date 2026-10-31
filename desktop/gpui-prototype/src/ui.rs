@@ -77,6 +77,7 @@ pub struct Nibble {
     color_stage: Option<usize>,
     color_replace_input: bool,
     selected_key: usize,
+    pending_left_key: Option<&'static str>,
     confirm_reset_keys: bool,
     confirm_reset_lighting: bool,
     confirm_reset_dpi: bool,
@@ -142,6 +143,7 @@ impl Nibble {
             color_stage: None,
             color_replace_input: false,
             selected_key: 0,
+            pending_left_key: None,
             confirm_reset_keys: false,
             confirm_reset_lighting: false,
             confirm_reset_dpi: false,
@@ -281,6 +283,7 @@ impl Nibble {
         self.dpi_drag = None;
         self.color_input = None;
         self.color_stage = None;
+        self.pending_left_key = None;
         let previous = self.profiles.clone();
         let result = self.profiles.select(index).and_then(|_| self.save_profiles());
         if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
@@ -756,15 +759,21 @@ impl Nibble {
         cx.notify();
     }
 
-    fn assign_key(&mut self, label: &'static str, cx: &mut Context<Self>) {
+    fn assign_key(&mut self, label: &'static str, confirmed: bool, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
         let index = self.selected_key;
-        if index == 0 {
+        let locked = self.profiles.current()["settings"]["lmbLock"].as_bool().unwrap_or(true);
+        if index == 0 && label != "Left-Click" && locked {
             self.message = Some("Left-click is locked to prevent losing mouse control.".into());
             cx.notify();
             return;
         }
         let Some(wire) = device::key_wire(label) else { return; };
+        if index == 0 && label != "Left-Click" && !confirmed {
+            self.pending_left_key = Some(label);
+            cx.notify(); return;
+        }
+        self.pending_left_key = None;
         if self.demo {
             if let Some(keys) = self.readout.as_mut().and_then(|data| data.keys.as_mut()) { keys[index] = wire; }
             cx.notify();
@@ -774,7 +783,7 @@ impl Nibble {
         let Some(snapshot) = self.readout.clone() else { return; };
         self.applying = true;
         self.message = Some("Applying button assignment…".into());
-        let work = cx.background_executor().spawn(async move { device::set_key(&snapshot, index, label) });
+        let work = cx.background_executor().spawn(async move { device::set_key(&snapshot, index, label, !locked) });
         cx.spawn(async move |view, cx| {
             let result = work.await;
             let _ = view.update(cx, |view, cx| {
@@ -971,7 +980,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; this.confirm_reset_lighting = false; this.confirm_reset_dpi = false; this.show_sleep_options = false; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.pending_left_key = None; this.confirm_reset_keys = false; this.confirm_reset_lighting = false; this.confirm_reset_dpi = false; this.show_sleep_options = false; cx.notify();
                     })),
             );
         }
@@ -1195,7 +1204,7 @@ impl Nibble {
                 .cursor_pointer().rounded(px(8.0)).bg(rgb(if selected { p.accent_soft } else { p.card }))
                 .text_color(rgb(if selected { p.accent } else { p.text })).px(px(12.0)).py(px(8.0)).text_size(px(12.0))
                 .child(format!("{} · {function}", labels[index]))
-                .on_click(cx.listener(move |this, _, _, cx| { this.selected_key = index; cx.notify(); })));
+                .on_click(cx.listener(move |this, _, _, cx| { this.selected_key = index; this.pending_left_key = None; cx.notify(); })));
         }
         let mut reset = div().id("reset-keys").rounded(px(6.0)).px(px(8.0)).py(px(6.0)).text_size(px(12.0))
             .text_color(rgb(p.muted)).child(if self.confirm_reset_keys { "Confirm reset" } else { "Reset all keys" });
@@ -1225,23 +1234,34 @@ impl Nibble {
                 let mut row = div().flex().gap(px(6.0));
                 for (item_index, label) in pair.iter().enumerate() {
                     let label = *label;
-                    let enabled = (self.demo || self.experimental_write) && keys.is_some() && self.selected_key != 0 && device::key_wire(label).is_some();
+                    let left_locked = self.profiles.current()["settings"]["lmbLock"].as_bool().unwrap_or(true);
+                    let enabled = (self.demo || self.experimental_write) && keys.is_some() && (self.selected_key != 0 || !left_locked || label == "Left-Click") && device::key_wire(label).is_some();
                     let selected = keys.and_then(|keys| device::key_wire(label).map(|wire| keys[self.selected_key] == wire)).unwrap_or(false);
                     let mut button = div().id(("key-function", group_index * 100 + row_index * 2 + item_index)).flex_1().rounded(px(8.0)).px(px(12.0)).py(px(11.0))
                         .bg(rgb(if selected { p.accent_soft } else { p.inset }))
                         .text_color(rgb(if selected { p.accent } else if enabled { p.text } else { p.muted })).child(label);
-                    if enabled { button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.assign_key(label, cx))); }
+                    if enabled { button = button.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.assign_key(label, false, cx))); }
                     row = row.child(button);
                 }
                 group = group.child(row);
             }
             functions = functions.child(group);
         }
+        let mut confirmation = div();
+        if let Some(label) = self.pending_left_key {
+            confirmation = confirmation.flex().flex_col().gap(px(8.0)).rounded(px(8.0)).bg(rgb(p.inset)).p(px(10.0))
+                .child("Changing left-click may make the mouse hard to use.")
+                .child(div().flex().gap(px(8.0))
+                    .child(div().id("confirm-left-key").cursor_pointer().text_color(rgb(p.accent)).child("Confirm change")
+                        .on_click(cx.listener(move |this, _, _, cx| this.assign_key(label, true, cx))))
+                    .child(div().id("cancel-left-key").cursor_pointer().child("Cancel")
+                        .on_click(cx.listener(|this, _, _, cx| { this.pending_left_key = None; cx.notify(); }))));
+        }
         let right = card(p).flex_1().h(px(620.0)).flex().flex_col().gap(px(10.0))
             .child(heading("Button Function"))
             .child(div().rounded(px(8.0)).p(px(12.0)).bg(rgb(p.accent_soft)).text_color(rgb(p.accent))
                 .child(format!("{} → {}", labels[self.selected_key], keys.map(|keys| device::key_label(keys[self.selected_key])).unwrap_or("Unavailable"))))
-            .child(functions);
+            .child(confirmation).child(functions);
         div().flex().gap(px(16.0)).child(left).child(right)
     }
 
@@ -1303,6 +1323,7 @@ impl Nibble {
         let local = &self.profiles.current()["settings"];
         let high_speed = local["highSpeed"].as_bool().unwrap_or(false);
         let fine_dpi = local["fineDpi"].as_bool().unwrap_or(false);
+        let left_locked = local["lmbLock"].as_bool().unwrap_or(true);
         let mode_24g = local["mode"].as_str() == Some("24g");
         let sensor = self.readout.as_ref().and_then(|data| data.sensor.as_ref());
         let power = self.profiles.power();
@@ -1432,7 +1453,8 @@ impl Nibble {
                 .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Background"))
                     .child(muted(p, "Choose a window style")))
                 .child(background_options))
-            .child(field(p, "Left-click lock", "Prevents accidental rebinding of LMB", "On"))
+            .child(field(p, "Left-click lock", "Prevents accidental rebinding of LMB", if left_locked { "On" } else { "Off" }).id("local-left-lock").cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| { this.pending_left_key = None; this.update_local_setting("lmbLock", serde_json::json!(!left_locked), cx); })))
             .child(div().flex().justify_between().items_center().gap(px(12.0)).min_h(px(74.0))
                 .child(div().flex().flex_col().gap(px(3.0)).child(div().font_weight(FontWeight::MEDIUM).child("Profile backup"))
                     .child(muted(p, "Save or load this profile as a JSON file")))
