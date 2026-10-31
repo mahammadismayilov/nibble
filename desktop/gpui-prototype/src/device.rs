@@ -335,7 +335,7 @@ fn sensor_packet(sensor: &Sensor) -> [u8; 33] {
 }
 
 #[derive(Clone, Copy)]
-pub enum LightChange { Mode(LightMode), Brightness(u8), Speed(u8) }
+pub enum LightChange { Mode(LightMode), Brightness(u8), Speed(u8), Reset }
 
 pub fn set_lighting(snapshot: &Readout, change: LightChange) -> Result<Lighting, String> {
     let (_api, mouse) = open_original_mouse(snapshot)?;
@@ -348,6 +348,7 @@ pub fn set_lighting(snapshot: &Readout, change: LightChange) -> Result<Lighting,
         LightChange::Mode(mode) => light.mode = mode,
         LightChange::Brightness(value) if light.mode != LightMode::Off && value <= 100 && value % 25 == 0 => light.brightness = value,
         LightChange::Speed(value) if light.mode == LightMode::Breathing && (1..=10).contains(&value) => light.speed = value,
+        LightChange::Reset => { light.mode = LightMode::Breathing; light.brightness = 100; light.speed = 5; },
         _ => return Err("Unsupported lighting value. No settings were sent.".into()),
     }
     let packet = light_packet(&light)?;
@@ -753,4 +754,3 @@ mod tests {
         assert!(key_wire("Fire button").is_none());
     }
 }
-

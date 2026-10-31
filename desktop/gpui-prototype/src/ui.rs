@@ -78,6 +78,7 @@ pub struct Nibble {
     color_replace_input: bool,
     selected_key: usize,
     confirm_reset_keys: bool,
+    confirm_reset_lighting: bool,
     content_scroll: ScrollHandle,
     profiles: Profiles,
     profiles_writable: bool,
@@ -141,6 +142,7 @@ impl Nibble {
             color_replace_input: false,
             selected_key: 0,
             confirm_reset_keys: false,
+            confirm_reset_lighting: false,
             content_scroll: ScrollHandle::new(),
             profiles,
             profiles_writable,
@@ -783,7 +785,7 @@ impl Nibble {
         if self.scanning || self.applying { return; }
         if self.demo {
             if let Some(light) = self.readout.as_mut().and_then(|data| data.lighting.as_mut()) {
-                match change { LightChange::Mode(mode) => light.mode = mode, LightChange::Brightness(value) => light.brightness = value, LightChange::Speed(value) => light.speed = value }
+                match change { LightChange::Mode(mode) => light.mode = mode, LightChange::Brightness(value) => light.brightness = value, LightChange::Speed(value) => light.speed = value, LightChange::Reset => { light.mode = LightMode::Breathing; light.brightness = 100; light.speed = 6; } }
             }
             cx.notify();
             return;
@@ -922,7 +924,7 @@ impl Nibble {
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.screen != index { this.content_scroll.set_offset(point(px(0.0), px(0.0))); }
-                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; this.show_sleep_options = false; cx.notify();
+                        this.screen = index; this.dpi_input = None; this.dpi_drag = None; this.light_drag = None; this.color_input = None; this.color_stage = None; this.confirm_reset_keys = false; this.confirm_reset_lighting = false; this.show_sleep_options = false; cx.notify();
                     })),
             );
         }
@@ -1209,10 +1211,23 @@ impl Nibble {
             light_editable && lighting.is_some_and(|light| light.mode != LightMode::Off));
         let speed = self.light_slider(p, cx, true, lighting.map(|light| light.speed),
             light_editable && lighting.is_some_and(|light| light.mode == LightMode::Breathing));
+        let mut reset = div().id("reset-lighting").rounded(px(8.0)).px(px(10.0)).py(px(7.0))
+            .text_color(rgb(if light_editable { p.accent } else { p.muted }))
+            .child(if self.confirm_reset_lighting { "Confirm reset" } else { "Reset lighting" });
+        if light_editable {
+            reset = reset.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
+                if this.confirm_reset_lighting { this.confirm_reset_lighting = false; this.update_lighting(LightChange::Reset, cx); }
+                else { this.confirm_reset_lighting = true; cx.notify(); }
+            }));
+        }
+        let reset_actions = div().flex().items_center().gap(px(6.0)).child(reset)
+            .when(self.confirm_reset_lighting, |row| row.child(div().id("cancel-reset-lighting").cursor_pointer()
+                .rounded(px(8.0)).px(px(10.0)).py(px(7.0)).text_color(rgb(p.muted)).child("Cancel")
+                .on_click(cx.listener(|this, _, _, cx| { this.confirm_reset_lighting = false; cx.notify(); }))));
         let mut card = card(p).flex_1().flex().flex_col().gap(px(14.0))
             .child(div().flex().justify_between().child(div().child(heading("Lighting Effect"))
                 .child(muted(p, "Constant mode color = active DPI stage color (change colors on the DPI tab)")))
-                .child(muted(p, "Reset lighting")))
+                .child(reset_actions))
             .child(effects)
             .child(muted(p, if self.demo || self.experimental_write { "Select an effect. Live changes require a readable current color." } else { "Lighting controls are not available in the preview." }))
             .child(brightness);

@@ -213,8 +213,15 @@ impl Profiles {
             }
             ReadoutScope::Keys => target["keys"] = source["keys"].clone(),
             ReadoutScope::Lighting(change) => {
-                let key = match change { device::LightChange::Mode(_) => "mode", device::LightChange::Brightness(_) => "brightness", device::LightChange::Speed(_) => "speed" };
-                target["light"][key] = source["light"][key].clone();
+                match change {
+                    device::LightChange::Reset => {
+                        for key in ["mode", "brightness", "speed"] { target["light"][key] = source["light"][key].clone(); }
+                    }
+                    other => {
+                        let key = match other { device::LightChange::Mode(_) => "mode", device::LightChange::Brightness(_) => "brightness", device::LightChange::Speed(_) => "speed", device::LightChange::Reset => unreachable!() };
+                        target["light"][key] = source["light"][key].clone();
+                    }
+                }
             }
         }
         validate_profile(target)?;
@@ -355,6 +362,19 @@ mod tests {
     }
 
     #[test]
+    fn lighting_reset_syncs_confirmed_values_without_overwriting_profile_color() {
+        let mut profiles = Profiles::new();
+        let before = profiles.current().clone();
+        let data = Readout { lighting: Some(device::Lighting { mode: LightMode::Breathing, brightness: 100, speed: 6, color: Some([1, 2, 3]) }), ..Default::default() };
+        profiles.sync_scope(&data, ReadoutScope::Lighting(device::LightChange::Reset)).unwrap();
+        assert_eq!(profiles.current()["light"]["mode"], "breathe");
+        assert_eq!(profiles.current()["light"]["brightness"], 100);
+        assert_eq!(profiles.current()["light"]["speed"], 6);
+        assert_eq!(profiles.current()["light"]["color"], before["light"]["color"]);
+        assert_eq!(profiles.current()["dpiStages"], before["dpiStages"]);
+    }
+
+    #[test]
     fn invalid_scoped_updates_leave_the_profile_unchanged() {
         let mut profiles = Profiles::new();
         let before = profiles.current().clone();
@@ -441,4 +461,3 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 }
-
