@@ -26,7 +26,7 @@ $profile = @{
     keys = @{'201'='left';'202'='right';'203'='middle';'204'='forward';'205'='backward';'206'='dpi_loop'}
     settings = @{lod='low';angleSnap=$false;ripple=$false;sleepWire=30;moveWake=$true;moveCloseLight=$false;debounce=4;lmbLock=$true;fineDpi=$false}
 }
-$second = $profile.Clone(); $second.name = 'Second Profile'
+$second = $profile.Clone(); $second.name = 'Second Profile'; $second.activeDpi = 2; $second.reportRateIndex = 2
 $profilePath = Join-Path $profileDir 'profiles.json'
 $original = @{profileIndex=1;profiles=@($profile,$second)} | ConvertTo-Json -Depth 10
 [IO.File]::WriteAllText($profilePath, $original, [Text.UTF8Encoding]::new($false))
@@ -85,11 +85,15 @@ try {
         if ($saved.profileIndex -ne 0 -or $saved.profiles.Count -ne 1 -or $saved.profiles[0].name -ne 'Default Profile') { throw 'Reset profiles did not survive restart.' }
         $restarted = Capture-ProfileWindow 'profile-reset-after-restart'
         try {
-            $changes = 0
+            $changes = 0; $savedValuesChanged = 0
             for ($y = 57; $y -lt 78; $y++) { for ($x = 850; $x -lt 980; $x++) {
                 if ($initial.GetPixel($x, $y).ToArgb() -ne $restarted.GetPixel($x, $y).ToArgb()) { $changes++ }
             } }
+            for ($y = 220; $y -lt 300; $y += 2) { for ($x = 520; $x -lt 850; $x += 2) {
+                if ($initial.GetPixel($x, $y).ToArgb() -ne $restarted.GetPixel($x, $y).ToArgb()) { $savedValuesChanged++ }
+            } }
             if ($changes -lt 30) { throw 'Restart did not display the reset profile.' }
+            if ($savedValuesChanged -lt 20) { throw 'Offline home values did not follow the saved profile.' }
         } finally { $restarted.Dispose(); $initial.Dispose() }
         Write-Output 'Profile reset preserved the file until confirmation and persisted the default profile after restart.'
     } finally { if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force } }

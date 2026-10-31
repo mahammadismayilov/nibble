@@ -47,6 +47,27 @@ impl Profiles {
         &self.document["profiles"][self.document["profileIndex"].as_u64().unwrap_or(0) as usize]
     }
 
+    pub fn saved_readout(&self) -> Readout {
+        let profile = self.current();
+        let dpi = profile["dpiStages"].as_array().into_iter().flatten()
+            .filter_map(|stage| stage["value"].as_u64().and_then(|value| u16::try_from(value).ok())).collect();
+        let active_dpi = profile["activeDpi"].as_u64().and_then(|value| usize::try_from(value).ok());
+        let dpi_count = profile["dpiStageCount"].as_u64().and_then(|value| usize::try_from(value).ok()).or(Some(6));
+        let rate = profile["reportRateIndex"].as_u64().and_then(|index| [125, 250, 500, 1000].get(index as usize)).copied();
+        let light = &profile["light"];
+        let mode = match light["mode"].as_str() {
+            Some("breathe") => Some(LightMode::Breathing), Some("solid") => Some(LightMode::Constant),
+            Some("off") => Some(LightMode::Off), _ => None,
+        };
+        let lighting = mode.and_then(|mode| Some(device::Lighting {
+            mode,
+            brightness: u8::try_from(light["brightness"].as_u64()?).ok()?,
+            speed: u8::try_from(light["speed"].as_u64()?).ok()?,
+            color: None,
+        }));
+        Readout { dpi, active_dpi, dpi_count, rate, lighting, ..Default::default() }
+    }
+
     pub fn names(&self) -> Vec<&str> {
         self.document["profiles"].as_array().into_iter().flatten()
             .filter_map(|profile| profile["name"].as_str()).collect()
@@ -326,6 +347,22 @@ fn validate_profile(profile: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_readout_contains_profile_values_without_claiming_a_connection() {
+        let mut profiles = Profiles::new();
+        let mut second = default_profile();
+        second["activeDpi"] = json!(2);
+        second["dpiStages"][2]["value"] = json!(1500);
+        second["reportRateIndex"] = json!(2);
+        profiles.import(&second.to_string()).unwrap();
+        let saved = profiles.saved_readout();
+        assert_eq!(saved.active_dpi, Some(2));
+        assert_eq!(saved.dpi[2], 1500);
+        assert_eq!(saved.rate, Some(500));
+        assert!(saved.battery.is_none());
+        assert!(!saved.model_confirmed);
+    }
 
     #[test]
     fn legacy_sleep_minutes_are_converted_without_confusing_wire_units() {

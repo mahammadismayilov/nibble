@@ -1068,36 +1068,38 @@ impl Nibble {
     }
 
     fn home(&self, p: Palette) -> Div {
-        let data = self.readout.as_ref();
+        let saved = (!self.demo && self.readout.is_none()).then(|| self.profiles.saved_readout());
+        let data = self.readout.as_ref().or(saved.as_ref());
         let dpi = data.and_then(|d| d.active_dpi.and_then(|i| d.dpi.get(i))).map(u16::to_string).unwrap_or_else(|| "—".into());
-        let stage = data.and_then(|d| d.active_dpi).map(|i| format!("Stage {}", i + 1)).unwrap_or_else(|| "Not available".into());
+        let stage = data.and_then(|d| d.active_dpi).map(|i| format!("Stage {}{}", i + 1, if saved.is_some() { " · Saved profile" } else { "" })).unwrap_or_else(|| "Not available".into());
         let rate = data.and_then(|d| d.rate).map(|value| value.to_string()).unwrap_or_else(|| "—".into());
         let battery = data.and_then(|d| d.battery).map(|value| format!("{value}%")).unwrap_or_else(|| "—".into());
         let battery_sub = match data { Some(d) if d.sleeping => "Sleeping", Some(d) if d.charging => "Charging", Some(d) if d.battery.is_some() => "Last read", _ => "Unavailable" };
         let connection = if self.profiles.current()["settings"]["mode"].as_str() == Some("24g") { "2.4G" } else { "USB" };
         let lighting = data.and_then(|d| d.lighting.as_ref());
         let light_name = lighting.map(|light| match light.mode { LightMode::Off => "Close", LightMode::Breathing => "Breathing", LightMode::Constant => "Constant light" }).unwrap_or("—");
-        let light_detail = lighting.map(|light| if light.mode == LightMode::Off { "Off".into() } else { format!("{}% brightness", light.brightness) }).unwrap_or_else(|| "Unavailable".into());
+        let light_detail = lighting.map(|light| if light.mode == LightMode::Off { "Off".into() } else { format!("{}% brightness{}", light.brightness, if saved.is_some() { " · Saved profile" } else { "" }) }).unwrap_or_else(|| "Unavailable".into());
         let hero = div().flex_1().h(px(560.0)).flex().flex_col().items_center().justify_center()
             .child(img(self.mouse.clone()).w(px(280.0)).h(px(500.0)).object_fit(ObjectFit::Contain))
             .child(div().mt(px(18.0)).text_size(px(24.0)).font_weight(FontWeight::SEMIBOLD).child("AJAZZ AJ179 / AJ179P"))
             .child(div().mt(px(6.0)).text_size(px(14.0)).text_color(rgb(p.muted)).child("PAW3395 sensor"));
         let stats = div().flex_1().h(px(560.0)).flex().flex_col()
-            .child(div().flex().h(px(185.0)).child(stat(p, "DPI", dpi, stage, true)).child(stat(p, "POLLING RATE", rate, "Hz".into(), true)))
+            .child(div().flex().h(px(185.0)).child(stat(p, "DPI", dpi, stage, true)).child(stat(p, "POLLING RATE", rate, if saved.is_some() { "Hz · Saved profile".into() } else { "Hz".into() }, true)))
             .child(div().h(px(185.0)).child(stat(p, "LIGHTING", light_name.into(), light_detail, false)))
-            .child(div().flex().h(px(185.0)).child(stat(p, "CONNECTION", connection.into(), if data.is_some() { "Receiver found".into() } else { "Not connected".into() }, false))
+            .child(div().flex().h(px(185.0)).child(stat(p, "CONNECTION", connection.into(), if self.readout.is_some() { "Receiver found".into() } else { "Not connected".into() }, false))
                 .child(stat(p, "BATTERY", battery, battery_sub.into(), false)));
         div().flex().w_full().gap(px(12.0)).child(hero).child(stats)
     }
 
     fn dpi(&self, p: Palette, cx: &mut Context<Self>) -> Div {
-        let data = self.readout.as_ref();
+        let saved = (!self.demo && self.readout.is_none()).then(|| self.profiles.saved_readout());
+        let data = self.readout.as_ref().or(saved.as_ref());
         let profile_colors: Vec<u32> = self.profiles.current()["dpiStages"].as_array().into_iter().flatten()
             .map(|stage| stage["color"].as_str().and_then(|color| color.strip_prefix('#'))
                 .and_then(|color| u32::from_str_radix(color, 16).ok()).unwrap_or(p.muted)).collect();
         let stage_count = data.and_then(|d| d.dpi_count).unwrap_or(6);
-        let dpi_editable = (self.demo || self.experimental_write) && data.is_some_and(|d| d.dpi_count.is_some() && d.dpi.len() == 6);
-        let rate_editable = (self.demo || self.experimental_write) && data.and_then(|d| d.rate).is_some();
+        let dpi_editable = (self.demo || self.experimental_write) && self.readout.as_ref().is_some_and(|d| d.dpi_count.is_some() && d.dpi.len() == 6);
+        let rate_editable = (self.demo || self.experimental_write) && self.readout.as_ref().and_then(|d| d.rate).is_some();
         let mut stage_rows = div().flex().flex_col().gap(px(8.0));
         for pair in [[Some(0), Some(1)], [Some(2), Some(3)], [Some(4), Some(5)]] {
             let mut row = div().flex().gap(px(8.0));
@@ -1181,7 +1183,7 @@ impl Nibble {
             .and_then(|i| profile_colors.get(i)).copied().unwrap_or(p.muted);
         let mut color_control = div().id("dpi-color").track_focus(&self.color_focus)
             .rounded(px(4.0)).bg(rgb(selected_color)).size(px(26.0));
-        if self.profiles_writable && data.and_then(|d| d.active_dpi).is_some() {
+        if self.profiles_writable && self.readout.as_ref().and_then(|d| d.active_dpi).is_some() {
             color_control = color_control.cursor_pointer()
                 .on_click(cx.listener(|this, _, window, cx| this.edit_color(window, cx)))
                 .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| this.handle_color_key(event, cx)));
@@ -1206,7 +1208,7 @@ impl Nibble {
             .child(color_control);
         let mut apply_colors = div().id("apply-dpi-colors").rounded(px(7.0)).px(px(8.0)).py(px(5.0))
             .text_size(px(11.0)).text_color(rgb(p.muted)).child("Apply profile colors");
-        if (self.demo || self.experimental_write) && self.profiles_writable && data.is_some() {
+        if (self.demo || self.experimental_write) && self.profiles_writable && self.readout.is_some() {
             apply_colors = apply_colors.cursor_pointer().bg(rgb(p.inset)).text_color(rgb(p.text))
                 .on_click(cx.listener(|this, _, _, cx| this.apply_profile_colors(cx)));
         }
@@ -1229,7 +1231,7 @@ impl Nibble {
             .child(chart)
             .child(div().mt(px(12.0)).child(stage_rows))
             .child(div().mt(px(12.0)).child(fine_controls))
-            .child(muted(p, "Apply profile colors replaces all six colors on the mouse."));
+            .child(muted(p, if saved.is_some() { "Saved profile values. Connect the mouse to change receiver settings." } else { "Apply profile colors replaces all six colors on the mouse." }));
         let mut rate_options = div().flex().flex_col().gap(px(8.0)).mt(px(14.0));
         for pair in [[125, 250], [500, 1000]] {
             let mut row = div().flex().gap(px(8.0));
