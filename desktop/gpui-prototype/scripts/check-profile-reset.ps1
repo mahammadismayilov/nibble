@@ -10,6 +10,7 @@ public static class ProfileResetWindow {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+    [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
 }
 '@
 $exe = Join-Path $env:GITHUB_WORKSPACE 'capture-input/target/release/nibble-gpui-prototype.exe'
@@ -96,5 +97,24 @@ try {
             if ($savedValuesChanged -lt 20) { throw 'Offline home values did not follow the saved profile.' }
         } finally { $restarted.Dispose(); $initial.Dispose() }
         Write-Output 'Profile reset preserved the file until confirmation and persisted the default profile after restart.'
+        $rect = New-Object ProfileResetWindow+Rect
+        if (-not [ProfileResetWindow]::GetWindowRect($process.MainWindowHandle, [ref]$rect)) { throw 'Could not read the restarted window bounds.' }
+        if (-not [ProfileResetWindow]::SetForegroundWindow($process.MainWindowHandle)) { throw 'Could not focus the restarted window.' }
+        Click-Point 190 119
+        Click-Point 140 500
+        Click-Point 810 370
+        Click-Point 160 602
+        foreach ($key in @(0x31, 0x34, 0x30, 0x30, 0x0d)) {
+            [ProfileResetWindow]::keybd_event([byte]$key, 0, 0, [UIntPtr]::Zero)
+            [ProfileResetWindow]::keybd_event([byte]$key, 0, 2, [UIntPtr]::Zero)
+        }
+        Start-Sleep -Seconds 1
+        Click-Point 337 197
+        $edited = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+        if ($edited.profiles[0].activeDpi -ne 2 -or $edited.profiles[0].dpiStageCount -ne 3 -or $edited.profiles[0].reportRateIndex -ne 2 -or $edited.profiles[0].dpiStages[2].value -ne 1400) { throw 'Offline DPI or report-rate edits were not saved.' }
+        if ($edited.profiles[0].dpiStages[0].value -ne 400 -or $edited.profiles[0].settings.debounce -ne 4) { throw 'Offline editing changed unrelated profile values.' }
+        $offlineShot = Capture-ProfileWindow 'profile-offline-dpi-edited'
+        $offlineShot.Dispose()
+        Write-Output 'Offline DPI stage, value, count, and report rate were saved without changing unrelated profile values.'
     } finally { if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force } }
 } finally { $env:LOCALAPPDATA = $originalLocalAppData }

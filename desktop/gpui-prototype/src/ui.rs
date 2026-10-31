@@ -318,6 +318,19 @@ impl Nibble {
         self.message = Some(match self.sync_profile_from_readout(scope) { Ok(()) => message.into(), Err(error) => error });
     }
 
+    fn display_readout(&self) -> Option<Readout> {
+        self.readout.clone().or_else(|| (!self.demo).then(|| self.profiles.saved_readout()))
+    }
+
+    fn save_offline_scope(&mut self, data: &Readout, scope: ReadoutScope, cx: &mut Context<Self>) {
+        if !self.profiles_writable { return; }
+        let previous = self.profiles.clone();
+        let result = self.profiles.sync_scope(data, scope).and_then(|_| self.save_profiles());
+        if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
+        else { self.message = Some("Saved in the profile. Mouse settings were not changed.".into()); }
+        cx.notify();
+    }
+
     fn select_profile(&mut self, index: usize, cx: &mut Context<Self>) {
         if self.scanning || self.applying { self.message = Some("Wait until the current device operation finishes.".into()); cx.notify(); return; }
         self.dpi_drag = None;
@@ -437,6 +450,14 @@ impl Nibble {
 
     fn reset_dpi(&mut self, cx: &mut Context<Self>) {
         if self.scanning || self.applying || !self.profiles_writable { return; }
+        if !self.demo && self.readout.is_none() {
+            let count = self.profiles.saved_readout().dpi_count.unwrap_or(6).clamp(1, 6);
+            let previous = self.profiles.clone();
+            let result = self.profiles.reset_dpi_defaults(1.min(count - 1), count).and_then(|_| self.save_profiles());
+            if let Err(error) = result { self.profiles = previous; self.message = Some(error); }
+            else { self.message = Some("DPI defaults saved in the profile. Mouse settings were not changed.".into()); }
+            cx.notify(); return;
+        }
         let Some(snapshot) = self.readout.clone() else { return; };
         if self.demo {
             let count = snapshot.dpi_count.unwrap_or(6).clamp(1, 6);
@@ -483,7 +504,7 @@ impl Nibble {
     fn edit_dpi(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
         self.dpi_drag = None;
-        let Some(value) = self.readout.as_ref().and_then(|data| data.active_dpi.and_then(|i| data.dpi.get(i))) else { return; };
+        let Some(value) = self.display_readout().and_then(|data| data.active_dpi.and_then(|i| data.dpi.get(i).copied())) else { return; };
         self.dpi_input = Some(value.to_string());
         self.dpi_replace_input = true;
         window.focus(&self.dpi_focus);
@@ -501,7 +522,7 @@ impl Nibble {
 
     fn start_dpi_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
-        let Some(stage) = self.readout.as_ref().and_then(|data| data.active_dpi) else { return; };
+        let Some(stage) = self.display_readout().and_then(|data| data.active_dpi) else { return; };
         if let Some(value) = self.dpi_for_pointer(position) {
             self.dpi_input = None;
             self.dpi_drag = Some((stage, value));
@@ -517,7 +538,7 @@ impl Nibble {
     fn finish_dpi_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
         let Some((stage, pending)) = self.dpi_drag.take() else { return; };
         let value = self.dpi_for_pointer(position).unwrap_or(pending);
-        let current = self.readout.as_ref().and_then(|data| data.active_dpi.map(|active| (active, data.dpi.get(active).copied())));
+        let current = self.display_readout().and_then(|data| data.active_dpi.map(|active| (active, data.dpi.get(active).copied())));
         if current.is_some_and(|(active, existing)| active == stage && existing != Some(value)) {
             self.set_dpi_value(value, cx);
         }
@@ -527,7 +548,7 @@ impl Nibble {
     fn edit_color(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.scanning || self.applying || !self.profiles_writable { return; }
         self.dpi_drag = None;
-        let Some(stage) = self.readout.as_ref().and_then(|data| data.active_dpi) else { return; };
+        let Some(stage) = self.display_readout().and_then(|data| data.active_dpi) else { return; };
         let Some(color) = self.profiles.current()["dpiStages"][stage]["color"].as_str() else { return; };
         self.color_input = Some(color.to_string());
         self.color_stage = Some(stage);
@@ -631,7 +652,15 @@ impl Nibble {
 
     fn set_dpi_value(&mut self, value: u16, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
-        let Some(index) = self.readout.as_ref().and_then(|data| data.active_dpi) else { return; };
+        let Some(index) = self.display_readout().and_then(|data| data.active_dpi) else { return; };
+        if !self.demo && self.readout.is_none() {
+            let mut data = self.profiles.saved_readout();
+            if !(50..=26000).contains(&value) || value % 50 != 0 { return; }
+            let Some(stage) = data.dpi.get_mut(index) else { return; };
+            *stage = value;
+            self.save_offline_scope(&data, ReadoutScope::DpiValue(index), cx);
+            return;
+        }
         if self.demo {
             if let Some(data) = &mut self.readout { if let Some(stage) = data.dpi.get_mut(index) { *stage = value; } }
             cx.notify();
@@ -664,9 +693,19 @@ impl Nibble {
 
     fn update_dpi(&mut self, value: usize, is_count: bool, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
-        if self.readout.as_ref().is_some_and(|data| {
+        if self.display_readout().is_some_and(|data| {
             if is_count { data.dpi_count == Some(value) } else { data.active_dpi == Some(value) }
         }) { return; }
+        if !self.demo && self.readout.is_none() {
+            let mut data = self.profiles.saved_readout();
+            if is_count && (1..=6).contains(&value) {
+                data.dpi_count = Some(value);
+                data.active_dpi = data.active_dpi.map(|index| index.min(value - 1));
+            } else if !is_count && value < data.dpi_count.unwrap_or(0) { data.active_dpi = Some(value); }
+            else { return; }
+            self.save_offline_scope(&data, if is_count { ReadoutScope::DpiCount } else { ReadoutScope::DpiSelection }, cx);
+            return;
+        }
         if self.demo {
             if let Some(data) = &mut self.readout {
                 if is_count {
@@ -717,7 +756,14 @@ impl Nibble {
 
     fn select_rate(&mut self, rate: u16, cx: &mut Context<Self>) {
         if self.scanning || self.applying { return; }
-        if self.readout.as_ref().and_then(|data| data.rate) == Some(rate) { return; }
+        if self.display_readout().and_then(|data| data.rate) == Some(rate) { return; }
+        if !self.demo && self.readout.is_none() {
+            if ![125, 250, 500, 1000].contains(&rate) { return; }
+            let mut data = self.profiles.saved_readout();
+            data.rate = Some(rate);
+            self.save_offline_scope(&data, ReadoutScope::Rate, cx);
+            return;
+        }
         if self.demo {
             if let Some(data) = &mut self.readout { data.rate = Some(rate); }
             cx.notify();
@@ -1098,8 +1144,9 @@ impl Nibble {
             .map(|stage| stage["color"].as_str().and_then(|color| color.strip_prefix('#'))
                 .and_then(|color| u32::from_str_radix(color, 16).ok()).unwrap_or(p.muted)).collect();
         let stage_count = data.and_then(|d| d.dpi_count).unwrap_or(6);
-        let dpi_editable = (self.demo || self.experimental_write) && self.readout.as_ref().is_some_and(|d| d.dpi_count.is_some() && d.dpi.len() == 6);
-        let rate_editable = (self.demo || self.experimental_write) && self.readout.as_ref().and_then(|d| d.rate).is_some();
+        let offline_editable = saved.is_some() && self.profiles_writable;
+        let dpi_editable = offline_editable || (self.demo || self.experimental_write) && self.readout.as_ref().is_some_and(|d| d.dpi_count.is_some() && d.dpi.len() == 6);
+        let rate_editable = offline_editable || (self.demo || self.experimental_write) && self.readout.as_ref().and_then(|d| d.rate).is_some();
         let mut stage_rows = div().flex().flex_col().gap(px(8.0));
         for pair in [[Some(0), Some(1)], [Some(2), Some(3)], [Some(4), Some(5)]] {
             let mut row = div().flex().gap(px(8.0));
@@ -1183,7 +1230,7 @@ impl Nibble {
             .and_then(|i| profile_colors.get(i)).copied().unwrap_or(p.muted);
         let mut color_control = div().id("dpi-color").track_focus(&self.color_focus)
             .rounded(px(4.0)).bg(rgb(selected_color)).size(px(26.0));
-        if self.profiles_writable && self.readout.as_ref().and_then(|d| d.active_dpi).is_some() {
+        if self.profiles_writable && data.and_then(|d| d.active_dpi).is_some() {
             color_control = color_control.cursor_pointer()
                 .on_click(cx.listener(|this, _, window, cx| this.edit_color(window, cx)))
                 .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| this.handle_color_key(event, cx)));
@@ -1231,7 +1278,7 @@ impl Nibble {
             .child(chart)
             .child(div().mt(px(12.0)).child(stage_rows))
             .child(div().mt(px(12.0)).child(fine_controls))
-            .child(muted(p, if saved.is_some() { "Saved profile values. Connect the mouse to change receiver settings." } else { "Apply profile colors replaces all six colors on the mouse." }));
+            .child(muted(p, if saved.is_some() { "Editing saved profile values. Mouse settings are not changed." } else { "Apply profile colors replaces all six colors on the mouse." }));
         let mut rate_options = div().flex().flex_col().gap(px(8.0)).mt(px(14.0));
         for pair in [[125, 250], [500, 1000]] {
             let mut row = div().flex().gap(px(8.0));
