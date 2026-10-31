@@ -72,6 +72,20 @@ foreach ($tab in $tabs) {
             for ($y = 0; $y -lt $height; $y += 17) {
                 for ($x = 0; $x -lt $width; $x += 17) { [void]$colors.Add($bitmap.GetPixel($x, $y).ToArgb()) }
             }
+            if ($Reference -and $colors.Count -lt 8) {
+                $renderDeadline = [DateTime]::UtcNow.AddSeconds(15)
+                do {
+                    Start-Sleep -Seconds 1
+                    $retryDc = $graphics.GetHdc()
+                    try { $printed = [CaptureWindow]::PrintWindow($process.MainWindowHandle, $retryDc, 2) }
+                    finally { $graphics.ReleaseHdc($retryDc) }
+                    if (-not $printed) { throw "Windows could not capture the $tab window." }
+                    $colors.Clear()
+                    for ($y = 0; $y -lt $height; $y += 17) {
+                        for ($x = 0; $x -lt $width; $x += 17) { [void]$colors.Add($bitmap.GetPixel($x, $y).ToArgb()) }
+                    }
+                } while ($colors.Count -lt 8 -and [DateTime]::UtcNow -lt $renderDeadline)
+            }
             $bitmap.Save((Join-Path $output "$tab.png"), [System.Drawing.Imaging.ImageFormat]::Png)
             if ($colors.Count -lt 8) { throw "The $tab capture appears blank ($($colors.Count) sampled colors)." }
             Write-Output "$tab capture: ${width}x${height}, $($colors.Count) sampled colors"

@@ -52,6 +52,9 @@ jobs:
       - name: Capture GPUI demo screens
         shell: pwsh
         run: ./desktop/gpui-prototype/scripts/capture-demo.ps1
+      - name: Capture backgrounds over contrasting windows
+        shell: pwsh
+        run: ./desktop/gpui-prototype/scripts/capture-backdrop.ps1
       - name: Upload visual captures and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -81,4 +84,3 @@ jobs:
           name: nibble-tauri-reference-windows
           path: visual-captures/
           if-no-files-found: warn
-

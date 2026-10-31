@@ -1419,7 +1419,7 @@ impl Render for Nibble {
             else if let Some(message) = &self.message { message.clone() }
             else if self.experimental_write { "Experimental mode · DPI, report rate, and sensor controls can change the receiver. Close other mouse software.".into() }
             else { "GPUI preview · Settings are read-only and may be unavailable.".to_string() };
-        let background_alpha = match self.background { BackgroundStyle::Solid => 0xff, BackgroundStyle::Frosted => 0xb8, BackgroundStyle::Clear => 0x88 };
+        let background_alpha = match self.background { BackgroundStyle::Solid => 0xff, BackgroundStyle::Frosted => 0xb8, BackgroundStyle::Clear => 0xa0 };
         div().size_full().bg(rgba((p.bg << 8) | background_alpha)).text_color(rgb(p.text)).font_family("Outfit").text_size(px(14.0))
             .flex().flex_col().px(px(20.0)).pt(px(8.0))
             .child(self.header(p, cx))
