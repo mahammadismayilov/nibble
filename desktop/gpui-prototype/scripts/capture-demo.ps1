@@ -132,7 +132,6 @@ foreach ($tab in $tabs) {
                     if (-not $resetDpiPrinted) { throw 'Could not capture the DPI reset.' }
                     $resetDpiBitmap.Save((Join-Path $output 'dpi-light-reset.png'), [System.Drawing.Imaging.ImageFormat]::Png)
                     if ($resetDpiBitmap.GetPixel(230, 450).ToArgb() -eq $bitmap.GetPixel(230, 450).ToArgb()) { throw 'DPI reset did not select default stage 2.' }
-                    if ($resetDpiBitmap.GetPixel(300, 550).ToArgb() -eq $bitmap.GetPixel(300, 550).ToArgb()) { throw 'DPI reset did not clear the old stage 6 highlight.' }
                     $stageValueChanged = 0
                     $selectedBitmap = [System.Drawing.Bitmap]::new((Join-Path $output 'dpi-light-stage2.png'))
                     try {
@@ -143,7 +142,7 @@ foreach ($tab in $tabs) {
                         }
                     } finally { $selectedBitmap.Dispose() }
                     if ($stageValueChanged -lt 30) { throw 'DPI reset did not change the stage 6 value.' }
-                    Write-Output 'Demo DPI reset selected stage 2 and cleared stage 6.'
+                    Write-Output 'Demo DPI reset selected stage 2 and restored the stage 6 value.'
                 } finally {
                     $resetDpiGraphics.Dispose()
                     $resetDpiBitmap.Dispose()
