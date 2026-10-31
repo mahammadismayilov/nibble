@@ -75,9 +75,25 @@ jobs:
         with:
           name: nibble-gpui-prototype-windows
           path: capture-input
-      - name: Measure demo at idle and during pointer movement
+      - name: Measure current GPUI build
         shell: pwsh
-        run: ./desktop/gpui-prototype/scripts/measure-performance.ps1
+        run: ./desktop/gpui-prototype/scripts/measure-performance.ps1 -OutputDirectory performance-results/baseline
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/gpui-prototype/target
+          key: ${{ runner.os }}-gpui-${{ hashFiles('desktop/gpui-prototype/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-gpui-${{ hashFiles('desktop/gpui-prototype/Cargo.lock') }}-
+      - name: Build temporary GPUI presentation experiment
+        shell: pwsh
+        run: ./desktop/gpui-prototype/scripts/build-performance-variant.ps1
+      - name: Measure temporary GPUI presentation experiment
+        shell: pwsh
+        run: ./desktop/gpui-prototype/scripts/measure-performance.ps1 -InputDirectory desktop/gpui-prototype -OutputDirectory performance-results/experimental
       - name: Upload performance report
         if: always()
         uses: actions/upload-artifact@v4

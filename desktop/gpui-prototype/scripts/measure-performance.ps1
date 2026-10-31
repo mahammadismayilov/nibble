@@ -1,3 +1,4 @@
+param([string]$InputDirectory = 'capture-input', [string]$OutputDirectory = 'performance-results')
 $ErrorActionPreference = 'Stop'
 Add-Type @'
 using System;
@@ -26,8 +27,8 @@ public static class PerfWindow {
 }
 '@
 
-$exe = Join-Path $env:GITHUB_WORKSPACE 'capture-input/target/release/nibble-gpui-prototype.exe'
-$output = Join-Path $env:GITHUB_WORKSPACE 'performance-results'
+$exe = Join-Path $env:GITHUB_WORKSPACE "$InputDirectory/target/release/nibble-gpui-prototype.exe"
+$output = Join-Path $env:GITHUB_WORKSPACE $OutputDirectory
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 if (-not (Test-Path -LiteralPath $exe)) { throw "Missing demo executable at $exe" }
 $gpuDescription = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object Name, DriverVersion)
