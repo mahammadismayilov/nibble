@@ -259,7 +259,11 @@ impl Profiles {
         serde_json::to_string_pretty(&json!({"app":"Nibble","version":"1.0.6","profile":self.current()})).map_err(|e| e.to_string())
     }
 
-    pub fn save(&self, path: &Path) -> Result<(), String> {
+    pub fn save(&self, path: &Path) -> Result<Option<String>, String> {
+        self.save_with_cleanup(path, |backup| fs::remove_file(backup))
+    }
+
+    fn save_with_cleanup(&self, path: &Path, cleanup: impl FnOnce(&Path) -> io::Result<()>) -> Result<Option<String>, String> {
         validate_document(&self.document)?;
         let parent = path.parent().ok_or("Invalid profile path")?;
         fs::create_dir_all(parent).map_err(|e| format!("Could not create profile folder: {e}"))?;
@@ -279,8 +283,10 @@ impl Profiles {
             if existed { let _ = fs::rename(&backup, path); }
             return Err(format!("Could not replace profiles: {error}"));
         }
-        if existed { fs::remove_file(&backup).map_err(|e| format!("Profiles saved, but backup cleanup failed: {e}"))?; }
-        Ok(())
+        let warning = if existed {
+            cleanup(&backup).err().map(|error| format!("Profiles saved, but backup cleanup failed: {error}. Keep the backup and resolve it before saving again."))
+        } else { None };
+        Ok(warning)
     }
 }
 
@@ -490,6 +496,22 @@ mod tests {
         fs::write(path.with_extension("json.pending"), b"recover me").unwrap();
         assert!(state.save(&path).is_err());
         assert_eq!(fs::read(path.with_extension("json.pending")).unwrap(), b"recover me");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cleanup_failure_reports_committed_profile_and_preserves_backup() {
+        let dir = std::env::temp_dir().join(format!("nibble-cleanup-{}-{:?}", std::process::id(), std::thread::current().id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("profiles.json");
+        let mut state = Profiles::new();
+        assert!(state.save(&path).unwrap().is_none());
+        state.set_local_setting("fineDpi", json!(true)).unwrap();
+        let warning = state.save_with_cleanup(&path, |_| Err(io::Error::new(io::ErrorKind::PermissionDenied, "blocked"))).unwrap();
+        assert!(warning.is_some());
+        assert_eq!(Profiles::load(&path).unwrap().current()["settings"]["fineDpi"], json!(true));
+        assert_eq!(Profiles::load(&path.with_extension("json.backup")).unwrap().current()["settings"]["fineDpi"], json!(false));
+        assert!(state.save(&path).is_err());
         fs::remove_dir_all(dir).unwrap();
     }
 }

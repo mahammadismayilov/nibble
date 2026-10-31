@@ -64,6 +64,7 @@ pub struct Nibble {
     readout: Option<Readout>,
     error: Option<String>,
     message: Option<String>,
+    save_warning: Option<String>,
     dpi_focus: FocusHandle,
     dpi_input: Option<String>,
     dpi_replace_input: bool,
@@ -140,6 +141,7 @@ impl Nibble {
             readout,
             error: None,
             message: profile_error,
+            save_warning: None,
             dpi_focus: cx.focus_handle(),
             dpi_input: None,
             dpi_replace_input: false,
@@ -294,11 +296,12 @@ impl Nibble {
         cx.notify();
     }
 
-    fn save_profiles(&self) -> Result<(), String> {
+    fn save_profiles(&mut self) -> Result<(), String> {
         if self.demo { return Ok(()); }
         if !self.profiles_writable { return Err("Saved profiles could not be loaded; the file was not changed.".into()); }
         let path = profile::profile_path().ok_or("Could not locate the profile folder")?;
-        self.profiles.save(&path)
+        self.save_warning = self.profiles.save(&path)?;
+        Ok(())
     }
 
     fn sync_profile_from_readout(&mut self, scope: ReadoutScope) -> Result<(), String> {
@@ -1579,6 +1582,7 @@ impl Render for Nibble {
             else if self.demo { "Sample data · The receiver is not accessed in demo mode.".to_string() }
             else if self.scanning { "Reading the receiver…".to_string() }
             else if let Some(error) = &self.error { format!("{error}. Close other mouse software, then refresh.") }
+            else if let Some(warning) = &self.save_warning { warning.clone() }
             else if let Some(message) = &self.message { message.clone() }
             else if self.experimental_write && self.readout.as_ref().is_some_and(|data| !data.model_confirmed) { "Mouse model is unconfirmed. Settings cannot be sent; refresh to retry.".into() }
             else if self.experimental_write { "Experimental mode · Supported controls can change mouse settings. Close other mouse software.".into() }
