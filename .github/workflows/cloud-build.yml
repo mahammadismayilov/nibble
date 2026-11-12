@@ -74,18 +74,24 @@ jobs:
           projectPath: desktop
           args: --bundles app,dmg --no-sign
 
-      - name: Package Nibble.app into zip
+      - name: Package and rename macOS release artifacts
         run: |
           if [ -d "src-tauri/target/release/bundle/macos/Nibble.app" ]; then
             ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/release/bundle/macos/Nibble.app" "src-tauri/target/release/bundle/macos/Nibble.zip"
           fi
+          for f in src-tauri/target/release/bundle/dmg/*.dmg; do
+            if [ -f "$f" ]; then
+              mv "$f" src-tauri/target/release/bundle/dmg/Nibble.dmg
+              break
+            fi
+          done
 
       - name: Upload macOS workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: nibble-macos
           path: |
-            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/release/bundle/dmg/Nibble.dmg
             desktop/src-tauri/target/release/bundle/macos/Nibble.zip
           if-no-files-found: warn
 
@@ -94,6 +100,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/release/bundle/dmg/Nibble.dmg
             desktop/src-tauri/target/release/bundle/macos/Nibble.zip
           fail_on_unmatched_files: false
