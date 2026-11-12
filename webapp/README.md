@@ -1,12 +1,10 @@
 # Nibble
 
 <p>
-  <a href="https://nibble.qafqazsiradaglari.xyz"><strong>Website</strong></a> ·
-  <a href="https://github.com/mahammadismayilov/nibble/releases"><strong>Releases</strong></a> ·
-  <a href="https://nibble.qafqazsiradaglari.xyz/#pricing"><strong>Support</strong></a>
+  <a href="https://github.com/mahammadismayilov/nibble/releases"><strong>Releases & Downloads</strong></a>
 </p>
 
-Browser-based WebHID mouse configurator for PAW3395 & PAW3950 wireless gaming mice.  
+WebHID mouse configurator for PAW3395 & PAW3950 wireless gaming mice.  
 Configure DPI, 8K polling rate, lighting, keys, and power — no Windows installer, no OEM bloat.
 
 ---
@@ -15,13 +13,19 @@ Configure DPI, 8K polling rate, lighting, keys, and power — no Windows install
 
 ## Quick start
 
-### Run in your browser
+### Desktop app (Recommended)
+
+Download the standalone companion from [Releases](https://github.com/mahammadismayilov/nibble/releases):
+* **Windows**: `nibble.exe` (run directly, no installer needed)
+* **macOS**: `Nibble.dmg` / `Nibble.zip`
+
+### Run locally in your browser
 
 Run the app locally in **Chrome** or **Edge**. WebHID talks to your mouse receiver directly in the browser.
 
 **You need Chrome or Edge** — WebHID doesn't work in Firefox or Safari.
 
-### Windows
+#### Windows
 
 Double-click `start.bat` or run:
 
@@ -29,7 +33,7 @@ Double-click `start.bat` or run:
 python -m http.server 8080
 ```
 
-### macOS / Linux
+#### macOS / Linux
 
 ```bash
 chmod +x start.sh
@@ -71,7 +75,7 @@ git clone https://github.com/mahammadismayilov/nibble.git
 | **Attack Shark X3** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A`) | Protocol Supported |
 | **VXE Dragonfly F1** | PAW3395 | 26,000 DPI | 1000 Hz | CompX (`VID_248A`) | Protocol Supported |
 
-> View the live [Supported Devices Catalog](https://nibble.qafqazsiradaglari.xyz/devices.html) for full specs and test status.
+> All supported device specifications, chipsets, and testing statuses are documented in the table above.
 
 ## Why a local server?
 

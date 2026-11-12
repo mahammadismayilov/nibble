@@ -1846,8 +1846,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
-name = "nibble-desktop"
-version = "1.0.4"
+name = "nibble"
+version = "1.1.0"
 dependencies = [
  "hidapi",
  "serde",

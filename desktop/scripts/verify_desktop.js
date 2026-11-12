@@ -50,8 +50,8 @@ try {
 try {
   const cargoPath = path.join(desktopDir, "src-tauri", "Cargo.toml");
   const cargoStr = fs.readFileSync(cargoPath, "utf-8");
-  if (cargoStr.includes('name = "nibble-desktop"') && cargoStr.includes("tray-icon")) {
-    logPass(`Cargo.toml verified: name="nibble-desktop" with tray-icon feature enabled`);
+  if ((cargoStr.includes('name = "nibble"') || cargoStr.includes('name = "nibble-desktop"')) && cargoStr.includes("tray-icon")) {
+    logPass(`Cargo.toml verified: name="nibble" with tray-icon feature enabled`);
   } else {
     logFail("Cargo.toml missing package name or tray-icon feature");
   }
